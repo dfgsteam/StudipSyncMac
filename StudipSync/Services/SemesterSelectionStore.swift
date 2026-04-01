@@ -21,4 +21,8 @@ final class SemesterSelectionStore {
         }
         settingsStore.updateActiveSemesterIDs(activeSemesterIDs)
     }
+
+    func isActive(semesterID: String) -> Bool {
+        activeSemesterIDs.contains(semesterID)
+    }
 }

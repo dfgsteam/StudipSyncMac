@@ -8,7 +8,9 @@ struct StudipSyncApp: App {
         WindowGroup("StudipSync") {
             ContentView(
                 statusController: container.statusController,
-                syncScheduler: container.syncScheduler
+                syncScheduler: container.syncScheduler,
+                semesterSelectionStore: container.semesterSelectionStore,
+                repository: container.resourceRepository
             )
             .onAppear {
                 container.syncScheduler.start(intervalMinutes: container.settingsStore.configuration.syncIntervalMinutes)

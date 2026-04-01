@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -30,6 +31,16 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Speicherort") {
+                Text(rootFolderDisplayText())
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Root-Ordner auswählen") {
+                    chooseRootFolder()
+                }
+            }
+
             Section("Synchronisierung") {
                 Stepper(
                     "Intervall: \(settingsStore.configuration.syncIntervalMinutes) min",
@@ -47,7 +58,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500)
+        .frame(width: 520)
         .padding()
         .onAppear {
             baseURLText = settingsStore.configuration.baseURL.absoluteString
@@ -56,7 +67,7 @@ struct SettingsView: View {
     }
 
     private func saveBaseURL() {
-        guard let normalized = normalizeHTTPSURL(baseURLText) else {
+        guard let normalized = BaseURLNormalizer.normalizeHTTPSURL(baseURLText) else {
             message = "Ungueltige URL. Bitte HTTPS verwenden."
             return
         }
@@ -96,18 +107,45 @@ struct SettingsView: View {
         }
     }
 
-    private func normalizeHTTPSURL(_ string: String) -> URL? {
-        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.contains(" "),
-              let url = URL(string: trimmed),
-              let scheme = url.scheme,
-              scheme.lowercased() == "https",
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return nil
+    private func chooseRootFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Auswaehlen"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let bookmark = try url.bookmarkData(
+                    options: [.withSecurityScope],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                settingsStore.updateRootFolderBookmark(bookmark)
+                message = "Root-Ordner gespeichert."
+            } catch {
+                message = "Root-Ordner konnte nicht gespeichert werden."
+                AppLogger.error("Storing root folder bookmark failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func rootFolderDisplayText() -> String {
+        guard let bookmark = settingsStore.configuration.rootFolderBookmark else {
+            return "Kein Root-Ordner ausgewaehlt"
         }
 
-        let normalizedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        components.path = normalizedPath
-        return components.url
+        do {
+            var isStale = false
+            let url = try URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            return isStale ? "Ordnerpfad veraltet: \(url.path)" : "Aktueller Root-Ordner: \(url.path)"
+        } catch {
+            return "Root-Ordner konnte nicht gelesen werden"
+        }
     }
 }
