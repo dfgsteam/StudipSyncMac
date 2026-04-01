@@ -29,8 +29,11 @@ final class SemesterListViewModel {
                 semesters = result.semesters
                 statusMessage = result.source == .cache ? "Aus Cache geladen" : "Remote geladen"
                 isLoading = false
+            } catch let apiError as StudIPAPIClient.APIClientError {
+                statusMessage = apiError.localizedDescription
+                isLoading = false
             } catch {
-                statusMessage = "Fehler: \(error.localizedDescription)"
+                statusMessage = "Fehler beim Abruf: \(error.localizedDescription)"
                 isLoading = false
             }
         }

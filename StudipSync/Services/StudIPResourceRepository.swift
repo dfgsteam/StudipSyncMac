@@ -168,6 +168,9 @@ actor StudIPResourceRepository {
             if let array = dictionary[key] as? [Any] {
                 return array
             }
+            if let objectMap = dictionary[key] as? [String: Any] {
+                return Array(objectMap.values)
+            }
         }
 
         for (_, value) in dictionary {
@@ -176,8 +179,22 @@ actor StudIPResourceRepository {
                     if let array = nested[key] as? [Any] {
                         return array
                     }
+                    if let objectMap = nested[key] as? [String: Any] {
+                        return Array(objectMap.values)
+                    }
+                }
+
+                // Some Stud.IP variants return collection as a dictionary of endpoint -> object.
+                // In that case, use all dictionary values as element candidates.
+                if nested.values.allSatisfy({ $0 is [String: Any] }) {
+                    return Array(nested.values)
                 }
             }
+        }
+
+        // Fallback: top-level dictionary with many object values.
+        if dictionary.values.allSatisfy({ $0 is [String: Any] }) {
+            return Array(dictionary.values)
         }
 
         return nil
@@ -335,3 +352,4 @@ private struct SemestersEnvelope: Decodable {
 private struct CoursesEnvelope: Decodable {
     let courses: [CourseDTO]
 }
+

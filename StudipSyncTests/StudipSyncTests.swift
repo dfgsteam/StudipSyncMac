@@ -34,6 +34,7 @@ struct StudipSyncTests {
     }
 
     @Test
+    @MainActor
     func metadataCacheSavesAndLoadsSemesters() async throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("StudipSyncTests-\(UUID().uuidString)", isDirectory: true)
