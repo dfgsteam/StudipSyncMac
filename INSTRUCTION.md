@@ -10,6 +10,7 @@ Referenz-API: https://studip.github.io/studip-rest.ip/
 - Nutze die Stud.IP REST API als einzige Datenquelle.
 - Implementiere einen zentralen API-Client mit sauberem Error-Handling (HTTP-Fehler, Timeouts, Offline).
 - API-Key-basierte Authentifizierung muss unterstuetzt sein.
+- Bilde die komplette relevante Stud.IP API als interne Resource-Schicht nach (1:1 Resource-Mapping mit stabilen lokalen Modellen/DTOs statt ad-hoc Einzelaufrufen).
 
 2. Lokale automatische Synchronisierung
 - Nutzer waehlt einen lokalen Root-Ordner.
@@ -63,6 +64,7 @@ Referenz-API: https://studip.github.io/studip-rest.ip/
 
 ## Architektur (empfohlen)
 - `StudIPAPIClient`: alle REST-Aufrufe, DTO-Mapping.
+- `StudIPResourceRepository`: vollstaendige Abbildung der Stud.IP-Resources (Semantik/Endpoints) als zentrale Domain-Resource-Schicht.
 - `KeychainService`: API-Key-Verwaltung.
 - `SyncEngine`: Delta-Berechnung, Download, Dateisystem-Operationen.
 - `SemesterSelectionStore`: persistente Aktiv/Deaktiv-Auswahl.
