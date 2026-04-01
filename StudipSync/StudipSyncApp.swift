@@ -1,17 +1,32 @@
-//
-//  StudipSyncApp.swift
-//  StudipSync
-//
-//  Created by Julius Hunold on 2026-04-01.
-//
-
 import SwiftUI
 
 @main
 struct StudipSyncApp: App {
+    @State private var container = AppContainer()
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        WindowGroup("StudipSync") {
+            ContentView(
+                statusController: container.statusController,
+                syncScheduler: container.syncScheduler
+            )
+            .onAppear {
+                container.syncScheduler.start(intervalMinutes: container.settingsStore.configuration.syncIntervalMinutes)
+            }
+        }
+
+        MenuBarExtra("StudipSync", systemImage: container.statusController.syncState.symbolName) {
+            MenuBarRootView(
+                statusController: container.statusController,
+                syncScheduler: container.syncScheduler
+            )
+        }
+
+        Settings {
+            SettingsView(
+                settingsStore: container.settingsStore,
+                keychainService: container.keychainService
+            )
         }
     }
 }
