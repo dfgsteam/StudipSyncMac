@@ -29,13 +29,21 @@ struct ContentView: View {
     private struct CourseDetailSection: Identifiable, Hashable {
         let id: String
         let title: String
+        let systemImage: String
 
-        static let description = CourseDetailSection(id: "description", title: "Beschreibung")
-        static let files = CourseDetailSection(id: "files", title: "Dateien")
-        static let chat = CourseDetailSection(id: "chat", title: "Chat")
-        static let wiki = CourseDetailSection(id: "wiki", title: "Wiki")
-        static let participants = CourseDetailSection(id: "participants", title: "Teilnehmer")
-        static let forum = CourseDetailSection(id: "forum", title: "Forum")
+        static let description = CourseDetailSection(id: "description", title: "Beschreibung", systemImage: "text.alignleft")
+        static let metadata = CourseDetailSection(id: "metadata", title: "Metadaten", systemImage: "square.text.square")
+        static let files = CourseDetailSection(id: "files", title: "Dateien", systemImage: "folder")
+        static let chat = CourseDetailSection(id: "chat", title: "Chat", systemImage: "bubble.left.and.bubble.right")
+        static let wiki = CourseDetailSection(id: "wiki", title: "Wiki", systemImage: "book.pages")
+        static let participants = CourseDetailSection(id: "participants", title: "Teilnehmer", systemImage: "person.2")
+        static let forum = CourseDetailSection(id: "forum", title: "Forum", systemImage: "list.bullet.rectangle")
+    }
+
+    private struct DemoNewsItem {
+        let title: String
+        let message: String
+        let dateText: String
     }
 
     let statusController: MenuBarStatusController
@@ -88,12 +96,22 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            pagesSidebar
-        } content: {
-            contentForSelectedPage
-        } detail: {
-            detailForSelectedPage
+        Group {
+            if selectedSemesterID == nil {
+                NavigationSplitView {
+                    pagesSidebar
+                } detail: {
+                    detailForSelectedPage
+                }
+            } else {
+                NavigationSplitView {
+                    pagesSidebar
+                } content: {
+                    coursesColumn
+                } detail: {
+                    detailColumn
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 980, minHeight: 560)
@@ -146,11 +164,12 @@ struct ContentView: View {
                     selectedCourseID = nil
                 } label: {
                     Label(page.title, systemImage: page.systemImage)
-                        .foregroundStyle(isSelectedMenuPage(page) ? Color.accentColor : Color.primary)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(activeRowForeground(isActive: isSelectedMenuPage(page)))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(isSelectedMenuPage(page) ? Color.accentColor.opacity(0.14) : Color.clear)
+                        .background(activeRowBackground(isActive: isSelectedMenuPage(page)))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
@@ -209,7 +228,7 @@ struct ContentView: View {
                 .disabled(semesterViewModel.isLoading)
             }
 
-            List(semesterViewModel.semesters, selection: $selectedSemesterID) { semester in
+            List(semesterViewModel.semesters) { semester in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(semester.title)
@@ -222,6 +241,11 @@ struct ContentView: View {
                     Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
                 }
+                .foregroundStyle(activeRowForeground(isActive: isSelectedSemester(semester.id)))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(activeRowBackground(isActive: isSelectedSemester(semester.id)))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
                 .onTapGesture {
                     selectedSemesterID = semester.id
@@ -319,58 +343,47 @@ struct ContentView: View {
     }
 
     private var coursesColumn: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 0) {
             HStack {
-                Text("Kurse")
-                    .font(.headline)
+                Text("Kurse im Semester")
+                    .font(.headline.weight(.semibold))
                 Spacer()
                 if isLoadingCourses {
                     ProgressView()
                         .controlSize(.small)
                 }
+                Text("\(courses.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.bar)
 
             List(courses, selection: $selectedCourseID) { course in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(course.title)
-                        .font(.body.weight(.medium))
-                        .lineLimit(2)
-
-                    if let subtitle = nonEmpty(course.subtitle) {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else if let number = nonEmpty(course.courseNumber) {
-                        Text("Kursnr. \(number)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else if let type = courseTypeLabel(for: course) {
-                        Text(type)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.vertical, 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedCourseID = course.id
-                }
+                courseRow(course)
             }
-            .listStyle(.inset)
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .controlBackgroundColor))
 
             Text(courseStatusMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.bar)
         }
-        .padding(12)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var detailColumn: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
             detailHeader
 
             ScrollView {
@@ -389,28 +402,33 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
             }
+            .background(Color(nsColor: .textBackgroundColor))
 
             Divider()
             detailActions
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(.bar)
         }
-        .padding(24)
     }
 
     private var detailHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Kursansicht")
-                .font(.title2.weight(.semibold))
-
-            Text("App-Status: \(statusController.syncState.statusText)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if let selectedSemester = selectedSemester {
-                Text(selectedSemester.title)
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(selectedSemester?.title ?? "Kein Semester ausgewaehlt")
+                    .font(.title.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(statusController.syncState.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.bar)
     }
 
     private func semesterStatusPlaceholder(for semester: SemesterDTO) -> some View {
@@ -463,8 +481,18 @@ struct ContentView: View {
             .chat,
             .wiki,
             .participants,
-            .forum
+            .forum,
+            .metadata
         ]
+    }
+
+    private var visibleCourseDetailSections: [CourseDetailSection] {
+        guard let selectedCourseID else { return defaultCourseDetailSections }
+        guard let pages = wikisByCourseID[selectedCourseID] else { return defaultCourseDetailSections }
+        if pages.isEmpty {
+            return defaultCourseDetailSections.filter { $0.id != CourseDetailSection.wiki.id }
+        }
+        return defaultCourseDetailSections
     }
 
     private var rawResponseTaskID: String {
@@ -492,7 +520,19 @@ struct ContentView: View {
     }
 
     private func isSelectedMenuPage(_ page: SidebarPage) -> Bool {
-        selectedSidebarPage == page
+        selectedSemesterID == nil && selectedSidebarPage == page
+    }
+
+    private func isSelectedSemester(_ semesterID: String) -> Bool {
+        selectedSemesterID == semesterID
+    }
+
+    private func activeRowBackground(isActive: Bool) -> Color {
+        isActive ? Color.accentColor.opacity(0.14) : .clear
+    }
+
+    private func activeRowForeground(isActive: Bool) -> Color {
+        isActive ? Color.accentColor : Color.primary
     }
 
     private func selectFirstSemesterIfNeeded() {
@@ -541,6 +581,7 @@ struct ContentView: View {
             if let index = courses.firstIndex(where: { $0.id == selectedCourseID }) {
                 courses[index] = detailedCourse
             }
+            await preloadWikiAvailability(for: selectedCourseID)
         } catch {
             AppLogger.error("Failed to load course detail: \(error.localizedDescription)")
         }
@@ -548,7 +589,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func courseDetailCard(for course: CourseDTO) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(course.title)
@@ -570,30 +611,8 @@ struct ContentView: View {
                     .font(.headline)
             }
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    detailRow("Ort", nonEmpty(course.location))
-                    detailRow("Startsemester", nonEmpty(course.startSemesterRef))
-                    detailRow("Institut", nonEmpty(course.instituteID))
-                    detailRow("Sem-Klasse", nonEmpty(course.semClassID))
-                    detailRow("Sem-Typ", nonEmpty(course.semTypeID))
-                    detailRow("Zusatz", nonEmpty(course.miscellaneous))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } label: {
-                Label("Metadaten", systemImage: "square.text.square")
-                    .font(.headline)
-            }
-
-            Text("Kursbereich")
-                .font(.headline)
-            Picker("Kursbereich", selection: $selectedCourseDetailSectionID) {
-                ForEach(defaultCourseDetailSections) { section in
-                    Text(section.title).tag(section.id)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            newsDemoBlock(for: course)
+            courseSectionNavigation
 
             GroupBox {
                 courseDetailSectionContent(for: course, sectionID: selectedCourseDetailSectionID)
@@ -602,6 +621,39 @@ struct ContentView: View {
                     .font(.headline)
             }
         }
+    }
+
+    private func courseRow(_ course: CourseDTO) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "book.closed")
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(course.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(2)
+                if let secondary = courseSecondaryLine(for: course) {
+                    Text(secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedCourseID = course.id
+        }
+    }
+
+    private func courseSecondaryLine(for course: CourseDTO) -> String? {
+        if let subtitle = nonEmpty(course.subtitle) { return subtitle }
+        if let number = nonEmpty(course.courseNumber) { return "Kursnr. \(number)" }
+        return courseTypeLabel(for: course)
     }
 
     private func courseMetaSummary(for course: CourseDTO) -> String? {
@@ -636,6 +688,17 @@ struct ContentView: View {
             } else {
                 emptySectionText("Keine Beschreibung vorhanden.")
             }
+
+        case CourseDetailSection.metadata.id:
+            VStack(alignment: .leading, spacing: 8) {
+                detailRow("Ort", nonEmpty(course.location))
+                detailRow("Startsemester", nonEmpty(course.startSemesterRef))
+                detailRow("Institut", nonEmpty(course.instituteID))
+                detailRow("Sem-Klasse", nonEmpty(course.semClassID))
+                detailRow("Sem-Typ", nonEmpty(course.semTypeID))
+                detailRow("Zusatz", nonEmpty(course.miscellaneous))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
         case CourseDetailSection.files.id:
             VStack(alignment: .leading, spacing: 8) {
@@ -677,8 +740,75 @@ struct ContentView: View {
         }
     }
 
+    private func newsDemoBlock(for course: CourseDTO) -> some View {
+        let item = DemoNewsItem(
+            title: "Demo-News fuer \(course.title)",
+            message: "Dies ist ein statischer Testeintrag. Hier erscheinen spaeter echte Kurs-News.",
+            dateText: "Heute"
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("News")
+                .font(.headline)
+            Text(item.title)
+                .font(.headline)
+            Text(item.message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text(item.dateText)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.secondary.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var courseSectionNavigation: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(visibleCourseDetailSections) { section in
+                    Button {
+                        selectedCourseDetailSectionID = section.id
+                    } label: {
+                        Label(section.title, systemImage: section.systemImage)
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(selectedCourseDetailSectionID == section.id ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+                            .foregroundStyle(selectedCourseDetailSectionID == section.id ? Color.accentColor : Color.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
     private func sectionTitle(for sectionID: String) -> String {
-        defaultCourseDetailSections.first(where: { $0.id == sectionID })?.title ?? "Bereich"
+        visibleCourseDetailSections.first(where: { $0.id == sectionID })?.title
+            ?? defaultCourseDetailSections.first(where: { $0.id == sectionID })?.title
+            ?? "Bereich"
+    }
+
+    private func preloadWikiAvailability(for courseID: String) async {
+        guard wikisByCourseID[courseID] == nil else { return }
+
+        do {
+            let pages = try await repository.fetchCourseWikiPages(courseID: courseID)
+            if selectedCourseID == courseID {
+                wikisByCourseID[courseID] = pages
+                if pages.isEmpty, selectedCourseDetailSectionID == CourseDetailSection.wiki.id {
+                    selectedCourseDetailSectionID = CourseDetailSection.description.id
+                }
+            }
+        } catch {
+            if selectedCourseID == courseID {
+                wikiErrorsByCourseID[courseID] = "Fehler beim Laden der Wiki-Seiten: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func emptySectionText(_ text: String) -> some View {
@@ -704,13 +834,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func rawResponseBlock(for course: CourseDTO, sectionID: String) -> some View {
-        if let endpointPath = sectionEndpointPath(for: sectionID, courseID: course.id) {
-            Text(endpointPath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-
         if isLoadingRawSectionResponse, rawSectionResponses[sectionID] == nil {
             ProgressView("Lade Response ...")
                 .controlSize(.small)
@@ -739,13 +862,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func filesBlock(for course: CourseDTO) -> some View {
-        if let endpointPath = sectionEndpointPath(for: CourseDetailSection.files.id, courseID: course.id) {
-            Text(endpointPath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-
         if isLoadingFiles, filesByCourseID[course.id] == nil {
             ProgressView("Lade Dateien ...")
                 .controlSize(.small)
@@ -816,13 +932,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func chatsBlock(for course: CourseDTO) -> some View {
-        if let endpointPath = sectionEndpointPath(for: CourseDetailSection.chat.id, courseID: course.id) {
-            Text(endpointPath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-
         if isLoadingChats, chatsByCourseID[course.id] == nil {
             ProgressView("Lade Chat ...")
                 .controlSize(.small)
@@ -909,13 +1018,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func wikisBlock(for course: CourseDTO) -> some View {
-        if let endpointPath = sectionEndpointPath(for: CourseDetailSection.wiki.id, courseID: course.id) {
-            Text(endpointPath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-
         if isLoadingWikis, wikisByCourseID[course.id] == nil {
             ProgressView("Lade Wiki ...")
                 .controlSize(.small)
@@ -935,9 +1037,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Text("Keine Wiki-Seiten gefunden.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            EmptyView()
         }
     }
 
@@ -975,13 +1075,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func participantsBlock(for course: CourseDTO) -> some View {
-        if let endpointPath = sectionEndpointPath(for: CourseDetailSection.participants.id, courseID: course.id) {
-            Text(endpointPath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-
         if isLoadingParticipants, participantsByCourseID[course.id] == nil {
             ProgressView("Lade Teilnehmer ...")
                 .controlSize(.small)
