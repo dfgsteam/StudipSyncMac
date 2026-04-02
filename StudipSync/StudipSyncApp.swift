@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct StudipSyncApp: App {
     @State private var container = AppContainer()
+    @State private var hasWarmedUpCurrentUser = false
 
     var body: some Scene {
         WindowGroup("StudipSync") {
@@ -14,6 +15,13 @@ struct StudipSyncApp: App {
             )
             .onAppear {
                 container.syncScheduler.start(intervalMinutes: container.settingsStore.configuration.syncIntervalMinutes)
+
+                if !hasWarmedUpCurrentUser {
+                    hasWarmedUpCurrentUser = true
+                    Task {
+                        await container.resourceRepository.warmupCurrentUserID()
+                    }
+                }
             }
         }
 

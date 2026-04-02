@@ -78,3 +78,9 @@ enum CourseResource: StudIPResourceDescriptor {
     static let collectionPath = "/v1/courses"
     static let fallbackCollectionKeys = ["courses", "data", "collection", "items"]
 }
+
+enum UserResource: StudIPResourceDescriptor {
+    typealias Model = UserDTO
+    static let collectionPath = "/v1/users"
+    static let fallbackCollectionKeys = ["users", "data", "collection", "items"]
+}

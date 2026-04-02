@@ -39,6 +39,7 @@ actor StudIPResourceRepository {
     private let apiClient: StudIPAPIClient
     private let settingsStore: SettingsStore
     private let metadataCache: MetadataCache
+    private var cachedCurrentUserID: String?
 
     init(apiClient: StudIPAPIClient, settingsStore: SettingsStore, metadataCache: MetadataCache) {
         self.apiClient = apiClient
@@ -84,28 +85,23 @@ actor StudIPResourceRepository {
         try await fetchOne(StudIPQuery<SemesterResource>().byID(canonicalStudIPID(id)))
     }
 
+    func warmupCurrentUserID() async {
+        do {
+            _ = try await ensureCurrentUserID()
+        } catch {
+            AppLogger.error("Current user warmup failed: \(error.localizedDescription)")
+        }
+    }
+
     func fetchCourses(for semesterID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [CourseDTO] {
         let normalizedSemesterID = canonicalStudIPID(semesterID)
         let queryOffset = offset ?? defaultCourseOffset
         let queryLimit = limit ?? defaultCourseLimit
+        let userID = try await ensureCurrentUserID()
         let query = StudIPQuery<CourseResource>()
             .whereFilter("semester", equals: normalizedSemesterID)
             .paginate(offset: queryOffset, limit: queryLimit)
-
-        let filtered: [CourseDTO]
-        do {
-            filtered = try await fetchCollection(query)
-        } catch let apiError as StudIPAPIClient.APIClientError where isFallbackCandidateForSemesterCourses(apiError) {
-            let fallbackCourses = try await fetchCoursesViaNestedSemesterRoutes(
-                semesterID: normalizedSemesterID,
-                offset: queryOffset,
-                limit: queryLimit
-            )
-            if fallbackCourses.isEmpty {
-                throw RepositoryError.noCoursesForSemester(normalizedSemesterID)
-            }
-            return fallbackCourses
-        }
+        let filtered = try await fetchUserCourses(userID: userID, queryItems: query.queryItems)
 
         if filtered.isEmpty {
             throw RepositoryError.noCoursesForSemester(normalizedSemesterID)
@@ -128,10 +124,11 @@ actor StudIPResourceRepository {
                 .paginate(offset: defaultSemesterOffset, limit: defaultSemesterLimit)
             query = (q.path, q.queryItems)
         case .courses(let semesterID):
+            let userID = try await ensureCurrentUserID()
             let q = StudIPQuery<CourseResource>()
                 .whereFilter("semester", equals: canonicalStudIPID(semesterID))
                 .paginate(offset: defaultCourseOffset, limit: defaultCourseLimit)
-            query = (q.path, q.queryItems)
+            query = (userCoursesPath(for: userID), q.queryItems)
         case .courseDetail(let courseID):
             let q = StudIPQuery<CourseResource>().byID(canonicalStudIPID(courseID))
             query = (q.path, q.queryItems)
@@ -160,47 +157,6 @@ actor StudIPResourceRepository {
         try await fetchSemesters()
     }
 
-    private func fetchCoursesViaNestedSemesterRoutes(semesterID: String, offset: Int, limit: Int) async throws -> [CourseDTO] {
-        let escapedID = semesterID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? semesterID
-        let fallbackPaths = [
-            "/v1/semesters/\(escapedID)/courses",
-            "/v1/semester/\(escapedID)/courses"
-        ]
-        let queryItems = [
-            URLQueryItem(name: "page[offset]", value: String(offset)),
-            URLQueryItem(name: "page[limit]", value: String(limit))
-        ]
-
-        for path in fallbackPaths {
-            do {
-                let data = try await apiClient.performRequest(path: path, queryItems: queryItems)
-                let courses: [CourseDTO] = try await parseCollection(
-                    from: data,
-                    fallbackCollectionKeys: CourseResource.fallbackCollectionKeys
-                )
-                return courses
-            } catch let apiError as StudIPAPIClient.APIClientError where isFallbackCandidateForSemesterCourses(apiError) {
-                continue
-            } catch let repositoryError as RepositoryError {
-                switch repositoryError {
-                case .invalidPayloadPreview:
-                    continue
-                case .noCoursesForSemester:
-                    continue
-                }
-            }
-        }
-
-        return []
-    }
-
-    private func isFallbackCandidateForSemesterCourses(_ error: StudIPAPIClient.APIClientError) -> Bool {
-        guard case .httpStatus(let code, _) = error else {
-            return false
-        }
-        return code == 400 || code == 404
-    }
-
     private func debugQueryContext(semesterID: String?, courseID: String?) -> DebugQueryContext {
         if let courseID, !courseID.isEmpty {
             return .courseDetail(courseID: canonicalStudIPID(courseID))
@@ -217,6 +173,27 @@ actor StudIPResourceRepository {
                 .lowercased()
                 .hasPrefix("semester ")
         }
+    }
+
+    private func ensureCurrentUserID() async throws -> String {
+        if let cachedCurrentUserID, !cachedCurrentUserID.isEmpty {
+            return cachedCurrentUserID
+        }
+
+        let me = try await fetchOne(StudIPQuery<UserResource>().byID("me"))
+        let id = canonicalStudIPID(me.id)
+        cachedCurrentUserID = id
+        return id
+    }
+
+    private func fetchUserCourses(userID: String, queryItems: [URLQueryItem]) async throws -> [CourseDTO] {
+        let data = try await apiClient.performRequest(path: userCoursesPath(for: userID), queryItems: queryItems)
+        return try await parseCollection(from: data, fallbackCollectionKeys: CourseResource.fallbackCollectionKeys)
+    }
+
+    private func userCoursesPath(for userID: String) -> String {
+        let escapedID = canonicalStudIPID(userID).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userID
+        return "/v1/users/\(escapedID)/courses"
     }
 
     private func fetchCollection<Resource: StudIPResourceDescriptor>(_ query: StudIPQuery<Resource>) async throws -> [Resource.Model] {
@@ -656,6 +633,47 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
             return true
         }
         return false
+    }
+}
+
+struct UserDTO: Decodable, Hashable, Identifiable {
+    let id: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+        case attributes
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id)
+            ?? container.decodeStringLossy(forKey: .userID)
+            ?? attributes?.decodeStringLossy(forKey: .id)
+            ?? attributes?.decodeStringLossy(forKey: .userID)
+            ?? idFromLinks
+
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing user id")
+            )
+        }
+
+        id = canonicalStudIPID(decodedID)
     }
 }
 
