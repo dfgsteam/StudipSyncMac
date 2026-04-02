@@ -117,7 +117,11 @@ struct ContentView: View {
     @State private var forumRepliesByEntryID: [String: [ForumEntryDTO]] = [:]
     @State private var forumReplyErrorsByEntryID: [String: String] = [:]
     @State private var loadingForumEntryIDs: Set<String> = []
+    @State private var userDisplayNameByID: [String: String] = [:]
+    @State private var loadingUserNameIDs: Set<String> = []
     @State private var prefetchingCourseIDs: Set<String> = []
+    @State private var detailSearchTextBySectionID: [String: String] = [:]
+    @State private var detailSectionLoadedAtByKey: [String: Date] = [:]
     @State private var selectedParticipantForInfo: StudIPResourceRepository.CourseParticipant?
 
     init(
@@ -323,67 +327,62 @@ struct ContentView: View {
     }
 
     private var startContentColumn: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Aktueller Stundenplan")
-                    .font(.headline)
-                Spacer()
-                if isLoadingStartSchedule {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("Neu laden") {
-                    Task {
-                        await loadStartSchedule(force: true)
-                    }
-                }
-                .disabled(isLoadingStartSchedule)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                startStatsGrid
+                startScheduleWidget(limit: 5)
+                startSemesterOverviewWidget
             }
-
-            GroupBox("Heute") {
-                VStack(alignment: .leading, spacing: 10) {
-                    if isLoadingStartSchedule, startScheduleEntries.isEmpty {
-                        ProgressView("Lade Stundenplan ...")
-                            .controlSize(.small)
-                    } else if let startScheduleError {
-                        Text(startScheduleError)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else if startScheduleEntries.isEmpty {
-                        Text("Heute sind keine Termine im Stundenplan.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 8) {
-                                ForEach(startScheduleEntries) { entry in
-                                    startScheduleRow(entry)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(minHeight: 140, maxHeight: 320)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if let loaded = startScheduleLoadedDate {
-                Text("Stand: \(Self.fileDateFormatter.string(from: loaded))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
     }
 
     private var startDetailColumn: some View {
-        staticMenuDetailColumn(
-            title: "Start",
-            subtitle: "Statische Testseite: Detailbereich"
-        )
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("StudIP Dashboard")
+                        .font(.title2.weight(.bold))
+                    Text(startSubtitleText)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Image(systemName: statusController.syncState.symbolName)
+                    Text(statusController.syncState.statusText)
+                        .lineLimit(1)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.12))
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(.bar)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    startStatsGrid
+                    startScheduleWidget(limit: 8)
+                    startSemesterOverviewWidget
+                    startQuickActionsWidget
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+
+            Divider()
+            detailActions
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(.bar)
+        }
     }
 
     private var benutzerContentColumn: some View {
@@ -447,6 +446,223 @@ struct ContentView: View {
             detailActions
         }
         .padding(24)
+    }
+
+    private var startSubtitleText: String {
+        if let current = currentSemesterForDashboard {
+            return "Aktives Semester: \(current.title)"
+        }
+        return "Uebersicht ueber Synchronisation, Semester und Termine"
+    }
+
+    private var currentSemesterForDashboard: SemesterDTO? {
+        semesterViewModel.semesters.first(where: { $0.isCurrent == true }) ?? semesterViewModel.semesters.first
+    }
+
+    private var visibleSemesterCount: Int {
+        semesterViewModel.semesters.filter { $0.visible != false }.count
+    }
+
+    private var cachedCourseCount: Int {
+        coursesBySemesterID.values.reduce(0) { partial, items in partial + items.count }
+    }
+
+    private var upcomingStartEntries: [ScheduleEntryDTO] {
+        let now = Date()
+        let upcoming = startScheduleEntries.filter { entry in
+            guard let start = parseAPIDate(entry.start) else { return false }
+            return start >= now
+        }
+        return upcoming.isEmpty ? startScheduleEntries : upcoming
+    }
+
+    private var startStatsGrid: some View {
+        let columns = [
+            GridItem(.flexible(minimum: 150)),
+            GridItem(.flexible(minimum: 150))
+        ]
+
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            dashboardStatTile(
+                title: "Semester",
+                value: "\(semesterViewModel.semesters.count)",
+                systemImage: "graduationcap"
+            )
+            dashboardStatTile(
+                title: "Aktiv fuer Sync",
+                value: "\(semesterSelectionStore.activeSemesterIDs.count)",
+                systemImage: "checkmark.seal",
+                footnote: "\(visibleSemesterCount) sichtbar"
+            )
+            dashboardStatTile(
+                title: "Kurse im Cache",
+                value: "\(cachedCourseCount)",
+                systemImage: "books.vertical"
+            )
+            dashboardStatTile(
+                title: "Termine heute",
+                value: "\(startScheduleEntries.count)",
+                systemImage: "calendar.badge.clock",
+                footnote: startScheduleLoadedDate.map { "Stand: \(Self.fileDateFormatter.string(from: $0))" }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func dashboardStatTile(title: String, value: String, systemImage: String, footnote: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+            if let footnote {
+                Text(footnote)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private func startScheduleWidget(limit: Int) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Heute", systemImage: "sun.max")
+                        .font(.headline)
+                    Spacer()
+                    if isLoadingStartSchedule {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Neu laden") {
+                        Task { await loadStartSchedule(force: true) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isLoadingStartSchedule)
+                }
+
+                if isLoadingStartSchedule, startScheduleEntries.isEmpty {
+                    ProgressView("Lade Stundenplan ...")
+                        .controlSize(.small)
+                } else if let startScheduleError {
+                    Text(startScheduleError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if upcomingStartEntries.isEmpty {
+                    Text("Heute sind keine Termine im Stundenplan.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(upcomingStartEntries.prefix(limit))) { entry in
+                            startScheduleRow(entry)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label("Tagesagenda", systemImage: "clock")
+        }
+    }
+
+    private var startSemesterOverviewWidget: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                if semesterViewModel.semesters.isEmpty {
+                    Text("Noch keine Semester geladen.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(semesterViewModel.semesters.prefix(6))) { semester in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(semester.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(semesterDateRangeText(semester))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            if semesterSelectionStore.isActive(semesterID: semester.id) {
+                                Text("Aktiv")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Color.green.opacity(0.16))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label("Semesterueberblick", systemImage: "calendar")
+        }
+    }
+
+    private var startQuickActionsWidget: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Schnellaktionen")
+                    .font(.headline)
+
+                HStack(spacing: 8) {
+                    Button("Semester neu laden") {
+                        semesterViewModel.loadSemesters()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Erstes Semester oeffnen") {
+                        if let first = semesterViewModel.semesters.first {
+                            selectedSemesterID = first.id
+                            selectedCourseID = nil
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(semesterViewModel.semesters.isEmpty)
+
+                    Button("Debug oeffnen") {
+                        debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
+                        openWindow(id: "debugWindow")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func semesterDateRangeText(_ semester: SemesterDTO) -> String {
+        let start = semester.begin ?? semester.startOfLectures
+        let end = semester.end ?? semester.endOfLectures
+
+        switch (start, end) {
+        case (.some(let start), .some(let end)):
+            return "\(Self.fileDateFormatter.string(from: start)) - \(Self.fileDateFormatter.string(from: end))"
+        case (.some(let start), .none):
+            return "Start: \(Self.fileDateFormatter.string(from: start))"
+        case (.none, .some(let end)):
+            return "Ende: \(Self.fileDateFormatter.string(from: end))"
+        default:
+            return "Kein Zeitraum hinterlegt"
+        }
     }
 
     private var coursesColumn: some View {
@@ -1089,6 +1305,7 @@ struct ContentView: View {
                 } else {
                     selectedNewsIDByCourseID[courseID] = sorted.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: courseID, sectionID: "news")
             } catch {
                 courseNewsErrorsByCourseID[courseID] = "Fehler beim Laden der Veranstaltungsnews: \(error.localizedDescription)"
             }
@@ -1107,6 +1324,7 @@ struct ContentView: View {
                 lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
             }
             newsCommentsByNewsID[newsID] = sorted
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: "news")
         } catch {
             newsCommentErrorsByNewsID[newsID] = "Fehler beim Laden der News-Kommentare: \(error.localizedDescription)"
         }
@@ -1141,6 +1359,7 @@ struct ContentView: View {
 
             foldersByContextKey[contextKey] = sortedFolders
             filesByContextKey[contextKey] = sortedFiles
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.files.id)
         } catch {
             fileErrorsByContextKey[contextKey] = "Fehler beim Laden der Dateien/Ordner: \(error.localizedDescription)"
         }
@@ -1157,6 +1376,7 @@ struct ContentView: View {
                 } else {
                     selectedChatThreadIDByCourseID[courseID] = threads.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.chat.id)
             } catch {
                 chatErrorsByCourseID[courseID] = "Fehler beim Laden der Chat-Threads: \(error.localizedDescription)"
             }
@@ -1179,7 +1399,9 @@ struct ContentView: View {
                 }
                 return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
             }
+            await resolveDisplayNamesIfNeeded(for: sorted.compactMap(\.authorID))
             chatMessagesByThreadID[threadID] = sorted
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.chat.id)
         } catch {
             chatMessageErrorsByThreadID[threadID] = "Fehler beim Laden des Chatfensters: \(error.localizedDescription)"
         }
@@ -1199,6 +1421,7 @@ struct ContentView: View {
             } else {
                 selectedWikiPageIDByCourseID[courseID] = pages.first?.id
             }
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.wiki.id)
         } catch {
             wikiErrorsByCourseID[courseID] = "Fehler beim Laden der Wiki-Seiten: \(error.localizedDescription)"
         }
@@ -1212,6 +1435,7 @@ struct ContentView: View {
         do {
             let participants = try await repository.fetchCourseParticipants(courseID: courseID)
             participantsByCourseID[courseID] = participants
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.participants.id)
         } catch {
             participantErrorsByCourseID[courseID] = "Fehler beim Laden der Teilnehmer: \(error.localizedDescription)"
         }
@@ -1239,6 +1463,7 @@ struct ContentView: View {
                 } else {
                     selectedForumCategoryIDByCourseID[courseID] = sortedCategories.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.forum.id)
             } catch {
                 forumErrorsByCourseID[courseID] = "Fehler beim Laden der Forum-Kategorien: \(error.localizedDescription)"
             }
@@ -1260,6 +1485,7 @@ struct ContentView: View {
                     let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
                     return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
                 }
+                await resolveDisplayNamesIfNeeded(for: sortedEntries.compactMap(\.authorID))
                 forumEntriesByCategoryID[categoryID] = sortedEntries
                 if let selectedID = selectedForumEntryIDByCategoryID[categoryID],
                    sortedEntries.contains(where: { $0.id == selectedID }) {
@@ -1267,6 +1493,7 @@ struct ContentView: View {
                 } else {
                     selectedForumEntryIDByCategoryID[categoryID] = sortedEntries.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.forum.id)
             } catch {
                 forumEntryErrorsByCategoryID[categoryID] = "Fehler beim Laden der Forum-Themen: \(error.localizedDescription)"
             }
@@ -1291,7 +1518,9 @@ struct ContentView: View {
                 let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
                 return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
             }
+            await resolveDisplayNamesIfNeeded(for: sortedReplies.compactMap(\.authorID))
             forumRepliesByEntryID[entryID] = sortedReplies
+            markDetailSectionLoadedNow(courseID: courseID, sectionID: CourseDetailSection.forum.id)
         } catch {
             forumReplyErrorsByEntryID[entryID] = "Fehler beim Laden der Forum-Antworten: \(error.localizedDescription)"
         }
@@ -1324,7 +1553,63 @@ struct ContentView: View {
             if shouldShowNewsBlock(for: course.id) {
                 newsDemoBlock(for: course)
             }
-            courseSectionNavigation
+
+            HStack(spacing: 10) {
+                courseSectionNavigation(for: course)
+
+                Button {
+                    Task {
+                        await forceReloadAllDetailContent(for: course.id)
+                    }
+                } label: {
+                    if prefetchingCourseIDs.contains(course.id) {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Alle neu laden", systemImage: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(prefetchingCourseIDs.contains(course.id))
+            }
+
+            HStack(spacing: 10) {
+                if supportsDetailSearch(for: selectedCourseDetailSectionID) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField(
+                            "In \(sectionTitle(for: selectedCourseDetailSectionID)) filtern",
+                            text: detailSearchBinding(for: selectedCourseDetailSectionID)
+                        )
+                        .textFieldStyle(.plain)
+
+                        if !rawDetailSearchQuery(for: selectedCourseDetailSectionID).isEmpty {
+                            Button {
+                                detailSearchTextBySectionID[selectedCourseDetailSectionID] = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Filter leeren")
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
+                Spacer(minLength: 8)
+
+                if let loadedAtText = detailSectionLoadedAtText(courseID: course.id, sectionID: selectedCourseDetailSectionID) {
+                    Text(loadedAtText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             GroupBox {
                 ScrollView {
@@ -1504,6 +1789,11 @@ struct ContentView: View {
                 Text("News")
                     .font(.headline)
                 Spacer()
+                if let loadedAtText = detailSectionLoadedAtText(courseID: course.id, sectionID: "news") {
+                    Text(loadedAtText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button("Neu laden") {
                     Task { await forceReloadNewsForSelectedCourse() }
                 }
@@ -1648,20 +1938,31 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private var courseSectionNavigation: some View {
+    private func courseSectionNavigation(for course: CourseDTO) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(visibleCourseDetailSections) { section in
                     Button {
                         selectedCourseDetailSectionID = section.id
                     } label: {
-                        Label(section.title, systemImage: section.systemImage)
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(selectedCourseDetailSectionID == section.id ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
-                            .foregroundStyle(selectedCourseDetailSectionID == section.id ? Color.accentColor : Color.primary)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        HStack(spacing: 6) {
+                            Label(section.title, systemImage: section.systemImage)
+                                .font(.subheadline.weight(.medium))
+
+                            if let count = sectionItemCount(for: section.id, courseID: course.id) {
+                                Text("\(count)")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.primary.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(selectedCourseDetailSectionID == section.id ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+                        .foregroundStyle(selectedCourseDetailSectionID == section.id ? Color.accentColor : Color.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
                 }
@@ -1670,10 +1971,84 @@ struct ContentView: View {
         }
     }
 
+    private func sectionItemCount(for sectionID: String, courseID: String) -> Int? {
+        switch sectionID {
+        case CourseDetailSection.files.id:
+            let contextKey = fileContextKey(courseID: courseID, folderID: nil)
+            guard let files = filesByContextKey[contextKey], let folders = foldersByContextKey[contextKey] else {
+                return nil
+            }
+            return files.count + folders.count
+        case CourseDetailSection.chat.id:
+            return chatsByCourseID[courseID]?.count
+        case CourseDetailSection.wiki.id:
+            return wikisByCourseID[courseID]?.count
+        case CourseDetailSection.participants.id:
+            return participantsByCourseID[courseID]?.count
+        case CourseDetailSection.forum.id:
+            return forumsByCourseID[courseID]?.count
+        default:
+            return nil
+        }
+    }
+
     private func sectionTitle(for sectionID: String) -> String {
         visibleCourseDetailSections.first(where: { $0.id == sectionID })?.title
             ?? defaultCourseDetailSections.first(where: { $0.id == sectionID })?.title
             ?? "Bereich"
+    }
+
+    private func supportsDetailSearch(for sectionID: String) -> Bool {
+        switch sectionID {
+        case CourseDetailSection.files.id,
+             CourseDetailSection.chat.id,
+             CourseDetailSection.wiki.id,
+             CourseDetailSection.participants.id,
+             CourseDetailSection.forum.id:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func detailSearchBinding(for sectionID: String) -> Binding<String> {
+        Binding(
+            get: { detailSearchTextBySectionID[sectionID] ?? "" },
+            set: { detailSearchTextBySectionID[sectionID] = $0 }
+        )
+    }
+
+    private func rawDetailSearchQuery(for sectionID: String) -> String {
+        (detailSearchTextBySectionID[sectionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizedDetailSearchQuery(for sectionID: String) -> String {
+        rawDetailSearchQuery(for: sectionID).lowercased()
+    }
+
+    private func detailSearchNoResultsText(for sectionID: String) -> String {
+        let raw = rawDetailSearchQuery(for: sectionID)
+        guard !raw.isEmpty else { return "Keine Treffer gefunden." }
+        return "Keine Treffer fuer \"\(raw)\"."
+    }
+
+    private func detailSectionCacheKey(courseID: String, sectionID: String) -> String {
+        "\(courseID)::\(sectionID)"
+    }
+
+    private func markDetailSectionLoadedNow(courseID: String, sectionID: String) {
+        detailSectionLoadedAtByKey[detailSectionCacheKey(courseID: courseID, sectionID: sectionID)] = Date()
+    }
+
+    private func detailSectionLoadedAtText(courseID: String, sectionID: String) -> String? {
+        guard let loadedAt = detailSectionLoadedAtByKey[detailSectionCacheKey(courseID: courseID, sectionID: sectionID)] else {
+            return nil
+        }
+        return "Stand: \(Self.fileDateFormatter.string(from: loadedAt))"
+    }
+
+    private func containsSearch(_ haystack: String, query: String) -> Bool {
+        query.isEmpty || haystack.lowercased().contains(query)
     }
 
     private func preloadWikiAvailability(for courseID: String) async {
@@ -1717,31 +2092,59 @@ struct ContentView: View {
 
     @ViewBuilder
     private func forumsBlock(for course: CourseDTO) -> some View {
+        let query = normalizedDetailSearchQuery(for: CourseDetailSection.forum.id)
+
         if isLoadingForums, forumsByCourseID[course.id] == nil {
             ProgressView("Lade Forum ...")
                 .controlSize(.small)
         } else if let categories = forumsByCourseID[course.id], !categories.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Kategorien", systemImage: "rectangle.stack.bubble.left")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(categories) { category in
-                            forumCategoryRow(category, courseID: course.id)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(10)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                }
+            let filteredCategories = query.isEmpty ? categories : categories.filter { category in
+                containsSearch(
+                    [
+                        nonEmpty(category.title),
+                        forumMetadataLine(category),
+                        category.id
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: " "),
+                    query: query
+                )
+            }
 
-                forumEntriesWindowBlock(for: course.id)
+            if filteredCategories.isEmpty {
+                Text(detailSearchNoResultsText(for: CourseDetailSection.forum.id))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Kategorien", systemImage: "rectangle.stack.bubble.left")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(filteredCategories) { category in
+                                forumCategoryRow(category, courseID: course.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(10)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    }
+
+                    let selectedID = selectedForumCategoryIDByCourseID[course.id]
+                    if selectedID == nil || filteredCategories.contains(where: { $0.id == selectedID }) {
+                        forumEntriesWindowBlock(for: course.id)
+                    } else {
+                        Text("Die aktuell ausgewaehlte Kategorie passt nicht zum Filter.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
         } else if let errorText = forumErrorsByCourseID[course.id] {
             Text(errorText)
@@ -1962,46 +2365,80 @@ struct ContentView: View {
         let contextKey = activeFileContextKey(for: course.id)
         let folders = foldersByContextKey[contextKey] ?? []
         let files = filesByContextKey[contextKey] ?? []
+        let query = normalizedDetailSearchQuery(for: CourseDetailSection.files.id)
+        let filteredFolders = query.isEmpty ? folders : folders.filter { folder in
+            containsSearch(
+                [
+                    nonEmpty(folder.name),
+                    nonEmpty(folder.details),
+                    folder.id
+                ]
+                .compactMap { $0 }
+                .joined(separator: " "),
+                query: query
+            )
+        }
+        let filteredFiles = query.isEmpty ? files : files.filter { file in
+            containsSearch(
+                [
+                    nonEmpty(file.name),
+                    nonEmpty(file.description),
+                    nonEmpty(file.ownerName),
+                    nonEmpty(file.mimeType),
+                    file.id
+                ]
+                .compactMap { $0 }
+                .joined(separator: " "),
+                query: query
+            )
+        }
         let hasContent = !folders.isEmpty || !files.isEmpty
+        let hasFilteredContent = !filteredFolders.isEmpty || !filteredFiles.isEmpty
 
         if isLoadingFiles, foldersByContextKey[contextKey] == nil, filesByContextKey[contextKey] == nil {
             ProgressView("Lade Dateien ...")
                 .controlSize(.small)
         } else if hasContent {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                if let breadcrumb = folderBreadcrumbText(for: course.id) {
-                    HStack(spacing: 10) {
-                        Text(breadcrumb)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+            if !hasFilteredContent {
+                Text(detailSearchNoResultsText(for: CourseDetailSection.files.id))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if let breadcrumb = folderBreadcrumbText(for: course.id) {
+                        HStack(spacing: 10) {
+                            Text(breadcrumb)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
 
-                        Spacer(minLength: 8)
+                            Spacer(minLength: 8)
 
-                        Button("Zurueck") {
-                            openParentFolder(for: course.id)
+                            Button("Zurueck") {
+                                openParentFolder(for: course.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("Wurzel") {
+                                openRootFolder(for: course.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                    }
 
-                        Button("Wurzel") {
-                            openRootFolder(for: course.id)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                    ForEach(filteredFolders) { folder in
+                        folderRow(folder, courseID: course.id)
+                    }
+
+                    ForEach(filteredFiles) { fileRef in
+                        fileRow(fileRef, contextKey: contextKey)
                     }
                 }
-
-                ForEach(folders) { folder in
-                    folderRow(folder, courseID: course.id)
-                }
-
-                ForEach(files) { fileRef in
-                    fileRow(fileRef, contextKey: contextKey)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 140)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 140)
         } else if let errorText = fileErrorsByContextKey[contextKey] {
             Text(errorText)
                 .font(.footnote)
@@ -2138,31 +2575,60 @@ struct ContentView: View {
 
     @ViewBuilder
     private func chatsBlock(for course: CourseDTO) -> some View {
+        let query = normalizedDetailSearchQuery(for: CourseDetailSection.chat.id)
+
         if isLoadingChats, chatsByCourseID[course.id] == nil {
             ProgressView("Lade Chat ...")
                 .controlSize(.small)
         } else if let threads = chatsByCourseID[course.id], !threads.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Unterhaltungen", systemImage: "list.bullet.bubble")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(threads) { thread in
-                            chatRow(thread, courseID: course.id)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(10)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                }
+            let filteredThreads = query.isEmpty ? threads : threads.filter { thread in
+                containsSearch(
+                    [
+                        thread.name,
+                        chatPreviewText(thread),
+                        chatMetadataLine(thread),
+                        thread.id
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: " "),
+                    query: query
+                )
+            }
 
-                chatWindowBlock(for: course.id)
+            if filteredThreads.isEmpty {
+                Text(detailSearchNoResultsText(for: CourseDetailSection.chat.id))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Unterhaltungen", systemImage: "list.bullet.bubble")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(filteredThreads) { thread in
+                                chatRow(thread, courseID: course.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(10)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    }
+
+                    let selectedID = selectedChatThreadIDByCourseID[course.id]
+                    if selectedID == nil || filteredThreads.contains(where: { $0.id == selectedID }) {
+                        chatWindowBlock(for: course.id)
+                    } else {
+                        Text("Der aktuell ausgewaehlte Thread passt nicht zum Filter.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
         } else if let errorText = chatErrorsByCourseID[course.id] {
             Text(errorText)
@@ -2325,20 +2791,50 @@ struct ContentView: View {
 
     @ViewBuilder
     private func wikisBlock(for course: CourseDTO) -> some View {
+        let query = normalizedDetailSearchQuery(for: CourseDetailSection.wiki.id)
+
         if isLoadingWikis, wikisByCourseID[course.id] == nil {
             ProgressView("Lade Wiki ...")
                 .controlSize(.small)
         } else if let pages = wikisByCourseID[course.id], !pages.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(pages) { page in
-                        wikiRow(page, courseID: course.id)
+            let filteredPages = query.isEmpty ? pages : pages.filter { page in
+                containsSearch(
+                    [
+                        page.keyword,
+                        wikiPreviewText(page),
+                        wikiMetadataLine(page),
+                        wikiContentText(page),
+                        page.id
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: " "),
+                    query: query
+                )
+            }
+
+            if filteredPages.isEmpty {
+                Text(detailSearchNoResultsText(for: CourseDetailSection.wiki.id))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(filteredPages) { page in
+                            wikiRow(page, courseID: course.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 100)
+
+                    let selectedID = selectedWikiPageIDByCourseID[course.id]
+                    if selectedID == nil || filteredPages.contains(where: { $0.id == selectedID }) {
+                        wikiWindowBlock(for: course.id)
+                    } else {
+                        Text("Die aktuell ausgewaehlte Wiki-Seite passt nicht zum Filter.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 100)
-
-                wikiWindowBlock(for: course.id)
             }
         } else if let errorText = wikiErrorsByCourseID[course.id] {
             Text(errorText)
@@ -2428,17 +2924,50 @@ struct ContentView: View {
 
     @ViewBuilder
     private func participantsBlock(for course: CourseDTO) -> some View {
+        let query = normalizedDetailSearchQuery(for: CourseDetailSection.participants.id)
+
         if isLoadingParticipants, participantsByCourseID[course.id] == nil {
             ProgressView("Lade Teilnehmer ...")
                 .controlSize(.small)
         } else if let participants = participantsByCourseID[course.id], !participants.isEmpty {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(participants) { participant in
-                    participantRow(participant)
-                }
+            let filteredParticipants = query.isEmpty ? participants : participants.filter { participant in
+                containsSearch(
+                    [
+                        participant.displayName,
+                        nonEmpty(participant.email),
+                        nonEmpty(participant.permission),
+                        nonEmpty(participant.label),
+                        participant.userID
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: " "),
+                    query: query
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 140)
+            let groupedParticipants = groupedParticipantsByRole(filteredParticipants)
+
+            if filteredParticipants.isEmpty {
+                Text(detailSearchNoResultsText(for: CourseDetailSection.participants.id))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if groupedParticipants.isEmpty {
+                Text("Keine Teilnehmer mit Rolle root/admin/dozent/tutor/autor vorhanden.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Self.participantRoleOrder, id: \.self) { roleKey in
+                        if let roleParticipants = groupedParticipants[roleKey], !roleParticipants.isEmpty {
+                            participantRoleTable(
+                                title: participantRoleTitle(for: roleKey),
+                                participants: roleParticipants
+                            )
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 140)
+            }
         } else if let errorText = participantErrorsByCourseID[course.id] {
             Text(errorText)
                 .font(.footnote)
@@ -2451,55 +2980,82 @@ struct ContentView: View {
         }
     }
 
-    private func participantRow(_ participant: StudIPResourceRepository.CourseParticipant) -> some View {
-        let initial = participant.displayName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .first
-            .map { String($0).uppercased() } ?? "?"
+    private func participantRoleTable(
+        title: String,
+        participants: [StudIPResourceRepository.CourseParticipant]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("\(title) (\(participants.count))", systemImage: "person.3.sequence")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
 
-        return HStack(alignment: .center, spacing: 10) {
-            Circle()
-                .fill(Color.accentColor.opacity(0.18))
-                .overlay {
-                    Text(initial)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+            ScrollView(.horizontal) {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Name").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("E-Mail").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Label").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Pos.").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Gr.").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Aktionen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+                        .gridCellColumns(6)
+
+                    ForEach(participants) { participant in
+                        GridRow(alignment: .center) {
+                            Text(participant.displayName)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .help("User-ID: \(participant.userID)")
+
+                            Text(nonEmpty(participant.email) ?? "—")
+                                .foregroundStyle(nonEmpty(participant.email) == nil ? .secondary : .primary)
+                                .lineLimit(1)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(nonEmpty(participant.label) ?? "—")
+                                .foregroundStyle(nonEmpty(participant.label) == nil ? .secondary : .primary)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(participant.position.map(String.init) ?? "—")
+                                .foregroundStyle(participant.position == nil ? .secondary : .primary)
+                                .frame(width: 36, alignment: .leading)
+
+                            Text(participant.group.map(String.init) ?? "—")
+                                .foregroundStyle(participant.group == nil ? .secondary : .primary)
+                                .frame(width: 32, alignment: .leading)
+
+                            HStack(spacing: 8) {
+                                Button {
+                                    selectedParticipantForInfo = participant
+                                } label: {
+                                    Image(systemName: "info.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Personeninfos")
+
+                                Button {
+                                    openMail(for: participant)
+                                } label: {
+                                    Image(systemName: "envelope")
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(nonEmpty(participant.email) == nil)
+                                .help(nonEmpty(participant.email) == nil ? "Keine Mailadresse vorhanden" : "Mail senden")
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
-                .frame(width: 28, height: 28)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(participant.displayName)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-
-                Text(participantMetadataLine(participant))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-
-            Spacer(minLength: 8)
-
-            Button {
-                selectedParticipantForInfo = participant
-            } label: {
-                Image(systemName: "info.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("Personeninfos")
-
-            Button {
-                openMail(for: participant)
-            } label: {
-                Image(systemName: "envelope")
-            }
-            .buttonStyle(.borderless)
-            .disabled(nonEmpty(participant.email) == nil)
-            .help(nonEmpty(participant.email) == nil ? "Keine Mailadresse vorhanden" : "Mail senden")
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.12))
+        .padding(10)
+        .background(Color.secondary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
@@ -2546,6 +3102,7 @@ struct ContentView: View {
                 } else {
                     selectedNewsIDByCourseID[requestCourseID] = sorted.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: "news")
             }
         } catch {
             if selectedCourseID == requestCourseID {
@@ -2588,6 +3145,7 @@ struct ContentView: View {
             if selectedCourseID == requestCourseID,
                selectedNewsIDByCourseID[requestCourseID] == requestNewsID {
                 newsCommentsByNewsID[requestNewsID] = sorted
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: "news")
             }
         } catch {
             if selectedCourseID == requestCourseID,
@@ -2656,6 +3214,7 @@ struct ContentView: View {
             if selectedCourseID == requestCourseID, activeFileFolderID(for: requestCourseID) == requestFolderID {
                 foldersByContextKey[requestContextKey] = sortedFolders
                 filesByContextKey[requestContextKey] = sortedFiles
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.files.id)
             }
         } catch {
             if selectedCourseID == requestCourseID, activeFileFolderID(for: requestCourseID) == requestFolderID {
@@ -2694,6 +3253,7 @@ struct ContentView: View {
                 } else {
                     selectedChatThreadIDByCourseID[requestCourseID] = threads.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.chat.id)
             }
         } catch {
             if selectedCourseID == requestCourseID {
@@ -2739,10 +3299,12 @@ struct ContentView: View {
                 }
                 return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
             }
+            await resolveDisplayNamesIfNeeded(for: sorted.compactMap(\.authorID))
 
             if selectedCourseID == requestCourseID,
                selectedChatThreadIDByCourseID[requestCourseID] == requestThreadID {
                 chatMessagesByThreadID[requestThreadID] = sorted
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.chat.id)
             }
         } catch {
             if selectedCourseID == requestCourseID,
@@ -2782,6 +3344,7 @@ struct ContentView: View {
                 } else {
                     selectedWikiPageIDByCourseID[requestCourseID] = pages.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.wiki.id)
             }
         } catch {
             if selectedCourseID == requestCourseID {
@@ -2814,6 +3377,7 @@ struct ContentView: View {
             let participants = try await repository.fetchCourseParticipants(courseID: requestCourseID)
             if selectedCourseID == requestCourseID {
                 participantsByCourseID[requestCourseID] = participants
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.participants.id)
             }
         } catch {
             if selectedCourseID == requestCourseID {
@@ -2869,6 +3433,7 @@ struct ContentView: View {
                 } else {
                     selectedForumCategoryIDByCourseID[requestCourseID] = sorted.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.forum.id)
             }
         } catch {
             if selectedCourseID == requestCourseID {
@@ -2917,6 +3482,7 @@ struct ContentView: View {
                 let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
                 return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
             }
+            await resolveDisplayNamesIfNeeded(for: sorted.compactMap(\.authorID))
 
             if selectedCourseID == requestCourseID,
                selectedForumCategoryIDByCourseID[requestCourseID] == requestCategoryID {
@@ -2927,6 +3493,7 @@ struct ContentView: View {
                 } else {
                     selectedForumEntryIDByCategoryID[requestCategoryID] = sorted.first?.id
                 }
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.forum.id)
             }
         } catch {
             if selectedCourseID == requestCourseID,
@@ -2980,11 +3547,13 @@ struct ContentView: View {
                 let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
                 return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
             }
+            await resolveDisplayNamesIfNeeded(for: sorted.compactMap(\.authorID))
 
             if selectedCourseID == requestCourseID,
                selectedForumCategoryIDByCourseID[requestCourseID] == requestCategoryID,
                selectedForumEntryIDByCategoryID[requestCategoryID] == requestEntryID {
                 forumRepliesByEntryID[requestEntryID] = sorted
+                markDetailSectionLoadedNow(courseID: requestCourseID, sectionID: CourseDetailSection.forum.id)
             }
         } catch {
             if selectedCourseID == requestCourseID,
@@ -3008,6 +3577,79 @@ struct ContentView: View {
 
         await loadNewsForSelectedCourse(force: true)
         await loadNewsCommentsForSelectedNews(force: true)
+    }
+
+    private func forceReloadAllDetailContent(for courseID: String) async {
+        let contextPrefix = "\(courseID)::"
+        let fileContextKeys = foldersByContextKey.keys.filter { $0.hasPrefix(contextPrefix) }
+
+        let knownNewsIDs = Set((courseNewsByCourseID[courseID] ?? []).map(\.id))
+        let selectedNewsID = selectedNewsIDByCourseID[courseID]
+        let newsIDsToClear = selectedNewsID.map { knownNewsIDs.union([$0]) } ?? knownNewsIDs
+
+        let knownThreadIDs = Set((chatsByCourseID[courseID] ?? []).map(\.id))
+        let selectedThreadID = selectedChatThreadIDByCourseID[courseID]
+        let threadIDsToClear = selectedThreadID.map { knownThreadIDs.union([$0]) } ?? knownThreadIDs
+
+        var categoryIDsToClear = Set((forumsByCourseID[courseID] ?? []).map(\.id))
+        if let selectedCategoryID = selectedForumCategoryIDByCourseID[courseID] {
+            categoryIDsToClear.insert(selectedCategoryID)
+        }
+
+        var entryIDsToClear: Set<String> = []
+        for categoryID in categoryIDsToClear {
+            if let entries = forumEntriesByCategoryID[categoryID] {
+                entryIDsToClear.formUnion(entries.map(\.id))
+            }
+            if let selectedEntryID = selectedForumEntryIDByCategoryID[categoryID] {
+                entryIDsToClear.insert(selectedEntryID)
+            }
+        }
+
+        for key in fileContextKeys {
+            foldersByContextKey[key] = nil
+            filesByContextKey[key] = nil
+            fileErrorsByContextKey[key] = nil
+        }
+        fileFolderPathByCourseID[courseID] = []
+
+        courseNewsByCourseID[courseID] = nil
+        courseNewsErrorsByCourseID[courseID] = nil
+        selectedNewsIDByCourseID[courseID] = nil
+        for newsID in newsIDsToClear {
+            newsCommentsByNewsID[newsID] = nil
+            newsCommentErrorsByNewsID[newsID] = nil
+        }
+
+        chatsByCourseID[courseID] = nil
+        chatErrorsByCourseID[courseID] = nil
+        selectedChatThreadIDByCourseID[courseID] = nil
+        for threadID in threadIDsToClear {
+            chatMessagesByThreadID[threadID] = nil
+            chatMessageErrorsByThreadID[threadID] = nil
+        }
+
+        wikisByCourseID[courseID] = nil
+        wikiErrorsByCourseID[courseID] = nil
+        selectedWikiPageIDByCourseID[courseID] = nil
+
+        participantsByCourseID[courseID] = nil
+        participantErrorsByCourseID[courseID] = nil
+
+        forumsByCourseID[courseID] = nil
+        forumErrorsByCourseID[courseID] = nil
+        selectedForumCategoryIDByCourseID[courseID] = nil
+        for categoryID in categoryIDsToClear {
+            forumEntriesByCategoryID[categoryID] = nil
+            forumEntryErrorsByCategoryID[categoryID] = nil
+            selectedForumEntryIDByCategoryID[categoryID] = nil
+        }
+        for entryID in entryIDsToClear {
+            forumRepliesByEntryID[entryID] = nil
+            forumReplyErrorsByEntryID[entryID] = nil
+        }
+
+        await prefetchAllTabContentForCourse(courseID)
     }
 
     private func forceReloadFilesForSelectedSection() async {
@@ -3078,6 +3720,39 @@ struct ContentView: View {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func normalizedUserID(_ rawID: String?) -> String? {
+        guard let id = nonEmpty(rawID) else { return nil }
+        return canonicalStudIPID(id)
+    }
+
+    private func displayName(forUserID rawUserID: String?) -> String? {
+        guard let userID = normalizedUserID(rawUserID) else { return nil }
+        return nonEmpty(userDisplayNameByID[userID])
+    }
+
+    private func resolveDisplayNamesIfNeeded(for rawUserIDs: [String]) async {
+        let requestedIDs = Set(rawUserIDs.compactMap { normalizedUserID($0) })
+        guard !requestedIDs.isEmpty else { return }
+
+        let idsToLoad = requestedIDs.filter { userID in
+            userDisplayNameByID[userID] == nil
+                && !loadingUserNameIDs.contains(userID)
+        }
+        guard !idsToLoad.isEmpty else { return }
+
+        loadingUserNameIDs.formUnion(idsToLoad)
+        defer { loadingUserNameIDs.subtract(idsToLoad) }
+
+        let loadedUsersByID = await repository.fetchUsersByIDs(Array(idsToLoad))
+
+        for userID in idsToLoad {
+            if let user = loadedUsersByID[userID],
+               let preferredDisplayName = nonEmpty(user.preferredDisplayName) {
+                userDisplayNameByID[userID] = preferredDisplayName
+            }
+        }
     }
 
     private func activeFileFolderID(for courseID: String) -> String? {
@@ -3417,7 +4092,9 @@ struct ContentView: View {
             components.append(Self.fileDateFormatter.string(from: createdAt))
         }
 
-        if let authorID = nonEmpty(message.authorID) {
+        if let authorName = displayName(forUserID: message.authorID) {
+            components.append(authorName)
+        } else if let authorID = normalizedUserID(message.authorID) {
             components.append("Autor \(authorID)")
         }
 
@@ -3528,6 +4205,12 @@ struct ContentView: View {
     private func forumEntryMetadataLine(_ entry: ForumEntryDTO) -> String {
         var components: [String] = []
 
+        if let authorName = displayName(forUserID: entry.authorID) {
+            components.append(authorName)
+        } else if let authorID = normalizedUserID(entry.authorID) {
+            components.append("Autor \(authorID)")
+        }
+
         if let area = entry.area {
             components.append("Bereich \(area)")
         }
@@ -3625,30 +4308,60 @@ struct ContentView: View {
         return formatter
     }()
 
-    private func participantMetadataLine(_ participant: StudIPResourceRepository.CourseParticipant) -> String {
-        var components: [String] = []
+    private static let participantRoleOrder = ["root", "admin", "dozent", "tutor", "autor"]
 
-        if let permission = nonEmpty(participant.permission) {
-            components.append(permission.capitalized)
+    private func groupedParticipantsByRole(
+        _ participants: [StudIPResourceRepository.CourseParticipant]
+    ) -> [String: [StudIPResourceRepository.CourseParticipant]] {
+        var grouped: [String: [StudIPResourceRepository.CourseParticipant]] = [:]
+        grouped.reserveCapacity(Self.participantRoleOrder.count)
+
+        for participant in participants {
+            guard let roleKey = participantRoleKey(for: participant.permission) else {
+                continue
+            }
+            grouped[roleKey, default: []].append(participant)
         }
 
-        if let label = nonEmpty(participant.label) {
-            components.append(label)
+        for roleKey in grouped.keys {
+            grouped[roleKey]?.sort { lhs, rhs in
+                let lhsPosition = lhs.position ?? Int.max
+                let rhsPosition = rhs.position ?? Int.max
+                if lhsPosition != rhsPosition {
+                    return lhsPosition < rhsPosition
+                }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
         }
 
-        if let position = participant.position {
-            components.append("Pos \(position)")
-        }
+        return grouped
+    }
 
-        if let group = participant.group {
-            components.append("Gruppe \(group)")
+    private func participantRoleKey(for permission: String?) -> String? {
+        guard let normalized = nonEmpty(permission)?.lowercased() else {
+            return nil
         }
-
-        if let email = nonEmpty(participant.email) {
-            components.append(email)
+        guard Self.participantRoleOrder.contains(normalized) else {
+            return nil
         }
+        return normalized
+    }
 
-        return components.isEmpty ? "Keine Zusatzinfos" : components.joined(separator: " • ")
+    private func participantRoleTitle(for roleKey: String) -> String {
+        switch roleKey {
+        case "root":
+            return "Root"
+        case "admin":
+            return "Admin"
+        case "dozent":
+            return "Dozent"
+        case "tutor":
+            return "Tutor"
+        case "autor":
+            return "Autor"
+        default:
+            return roleKey.capitalized
+        }
     }
 
     private func openMail(for participant: StudIPResourceRepository.CourseParticipant) {

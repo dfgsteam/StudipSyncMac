@@ -470,16 +470,23 @@ struct ForumEntryDTO: Decodable, Hashable, Identifiable {
     let title: String?
     let content: String?
     let area: Int?
+    let authorID: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case attributes
+        case relationships
     }
 
     enum AttributesCodingKeys: String, CodingKey {
         case title
         case content
         case area
+    }
+
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case author
+        case user
     }
 
     init(from decoder: Decoder) throws {
@@ -489,10 +496,13 @@ struct ForumEntryDTO: Decodable, Hashable, Identifiable {
         }
 
         let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
         id = canonicalStudIPID(rawID)
         title = attributes?.decodeNonEmptyString(forKey: .title)
         content = attributes?.decodeNonEmptyString(forKey: .content)
         area = attributes?.decodeIntLossy(forKey: .area)
+        authorID = (try? relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .author)?.data?.id).map(canonicalStudIPID)
+            ?? (try? relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .user)?.data?.id).map(canonicalStudIPID)
     }
 }
 

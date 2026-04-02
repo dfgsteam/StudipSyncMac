@@ -171,6 +171,20 @@ actor StudIPResourceRepository {
         try await courseSectionRepository.fetchCourseParticipants(courseID: courseID, offset: offset, limit: limit)
     }
 
+    func fetchUsersByIDs(_ userIDs: [String]) async -> [String: UserDTO] {
+        let normalizedIDs = Array<Any>(
+            Set(
+                userIDs.compactMap { rawID in
+                    let trimmed = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    return canonicalStudIPID(trimmed)
+                }
+            )
+        )
+        guard !normalizedIDs.isEmpty else { return [:] }
+        return await userRepository.fetchUsers(userIDs: normalizedIDs)
+    }
+
     func debugCurlCommands(for semesterID: String?, courseID: String?) async throws -> [String] {
         let context = debugQueryContext(semesterID: semesterID, courseID: courseID)
         let query: (path: String, queryItems: [URLQueryItem])
