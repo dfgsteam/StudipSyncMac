@@ -84,3 +84,69 @@ enum UserResource: StudIPResourceDescriptor {
     static let collectionPath = "/v1/users"
     static let fallbackCollectionKeys = ["users", "data", "collection", "items"]
 }
+
+enum TermsOfUseResource: StudIPResourceDescriptor {
+    typealias Model = TermsOfUseDTO
+    static let collectionPath = "/v1/terms-of-use"
+    static let fallbackCollectionKeys = ["terms-of-use", "data", "collection", "items"]
+}
+
+enum FileRefResource: StudIPResourceDescriptor {
+    typealias Model = CourseFileRefDTO
+    static let collectionPath = "/v1/file-refs"
+    static let fallbackCollectionKeys = ["file-refs", "data", "collection", "items"]
+}
+
+enum FolderResource: StudIPResourceDescriptor {
+    typealias Model = FolderDTO
+    static let collectionPath = "/v1/folders"
+    static let fallbackCollectionKeys = ["folders", "data", "collection", "items"]
+}
+
+enum ScheduleEntryResource: StudIPResourceDescriptor {
+    typealias Model = ScheduleEntryDTO
+    static let collectionPath = "/v1/schedule-entries"
+    static let fallbackCollectionKeys = ["schedule-entries", "data", "collection", "items"]
+}
+
+enum SeminarCycleDateResource: StudIPResourceDescriptor {
+    typealias Model = SeminarCycleDateDTO
+    static let collectionPath = "/v1/seminar-cycle-dates"
+    static let fallbackCollectionKeys = ["seminar-cycle-dates", "data", "collection", "items"]
+}
+
+enum NewsResource: StudIPResourceDescriptor {
+    typealias Model = NewsDTO
+    static let collectionPath = "/v1/news"
+    static let fallbackCollectionKeys = ["news", "data", "collection", "items"]
+}
+
+enum CommentResource: StudIPResourceDescriptor {
+    typealias Model = NewsCommentDTO
+    static let collectionPath = "/v1/comments"
+    static let fallbackCollectionKeys = ["comments", "data", "collection", "items"]
+}
+
+enum BlubberPostingResource: StudIPResourceDescriptor {
+    typealias Model = BlubberPostingDTO
+    static let collectionPath = "/v1/blubber-postings"
+    static let fallbackCollectionKeys = ["blubber-postings", "data", "collection", "items"]
+}
+
+enum BlubberStreamResource: StudIPResourceDescriptor {
+    typealias Model = BlubberStreamDTO
+    static let collectionPath = "/v1/blubber-streams"
+    static let fallbackCollectionKeys = ["blubber-streams", "data", "collection", "items"]
+}
+
+enum ForumCategoryResource: StudIPResourceDescriptor {
+    typealias Model = ForumCategoryDTO
+    static let collectionPath = "/v1/forum-categories"
+    static let fallbackCollectionKeys = ["forum-categories", "data", "collection", "items"]
+}
+
+enum ForumEntryResource: StudIPResourceDescriptor {
+    typealias Model = ForumEntryDTO
+    static let collectionPath = "/v1/forum-entries"
+    static let fallbackCollectionKeys = ["forum-entries", "data", "collection", "items"]
+}

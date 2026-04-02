@@ -70,6 +70,20 @@ enum StudIPAPIPathResolver {
     }
 }
 
+enum StudIPHTTPMethod: String {
+    case get = "GET"
+    case post = "POST"
+    case patch = "PATCH"
+    case delete = "DELETE"
+    case head = "HEAD"
+}
+
+struct StudIPHTTPResponse {
+    let data: Data
+    let statusCode: Int
+    let headers: [AnyHashable: Any]
+}
+
 final class StudIPAPIClient {
     enum APIClientError: LocalizedError {
         case invalidPath
@@ -111,6 +125,60 @@ final class StudIPAPIClient {
     }
 
     func performRequest(path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
+        try await performRequest(path: path, queryItems: queryItems, method: .get)
+    }
+
+    func performRequest(
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        method: StudIPHTTPMethod,
+        body: Data? = nil,
+        acceptHeader: String? = "application/vnd.api+json, application/json",
+        contentTypeHeader: String? = nil
+    ) async throws -> Data {
+        let response = try await performRequestWithResponse(
+            path: path,
+            queryItems: queryItems,
+            method: method,
+            body: body,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader
+        )
+
+        if method == .head {
+            return response.data
+        }
+
+        return normalizedResponseData(response.data)
+    }
+
+    func performRequest<Body: Encodable>(
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        method: StudIPHTTPMethod,
+        body: Body,
+        acceptHeader: String? = "application/vnd.api+json, application/json",
+        contentTypeHeader: String? = "application/vnd.api+json"
+    ) async throws -> Data {
+        let encodedBody = try JSONEncoder().encode(body)
+        return try await performRequest(
+            path: path,
+            queryItems: queryItems,
+            method: method,
+            body: encodedBody,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader
+        )
+    }
+
+    func performRequestWithResponse(
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        method: StudIPHTTPMethod,
+        body: Data? = nil,
+        acceptHeader: String? = "application/vnd.api+json, application/json",
+        contentTypeHeader: String? = nil
+    ) async throws -> StudIPHTTPResponse {
         guard hasOutgoingNetworkPermission() else {
             throw APIClientError.sandboxNetworkPermissionMissing
         }
@@ -124,10 +192,27 @@ final class StudIPAPIClient {
             throw APIClientError.missingCredentials
         }
 
-        return try await send(url: url, credentials: credentials)
+        return try await send(
+            url: url,
+            credentials: credentials,
+            method: method,
+            body: body,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader
+        )
     }
 
     func makeCURL(path: String, queryItems: [URLQueryItem] = []) async throws -> String {
+        try await makeCURL(path: path, queryItems: queryItems, method: .get)
+    }
+
+    func makeCURL(
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        method: StudIPHTTPMethod,
+        body: Data? = nil,
+        contentTypeHeader: String? = nil
+    ) async throws -> String {
         let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
         guard let url = buildURL(baseURL: baseURL, path: path, queryItems: queryItems) else {
             throw APIClientError.invalidPath
@@ -141,7 +226,25 @@ final class StudIPAPIClient {
         let token = Data(raw.utf8).base64EncodedString()
         let authorizationHeader = "Authorization: Basic \(token)"
 
-        return "curl -i -X GET '\(shellEscaped(url.absoluteString))' -H '\(shellEscaped(authorizationHeader))'"
+        var parts = [
+            "curl",
+            "-i",
+            "-X",
+            method.rawValue,
+            "'\(shellEscaped(url.absoluteString))'",
+            "-H",
+            "'\(shellEscaped(authorizationHeader))'"
+        ]
+
+        if let contentTypeHeader {
+            parts.append(contentsOf: ["-H", "'\(shellEscaped("Content-Type: \(contentTypeHeader)"))'"])
+        }
+
+        if let body, !body.isEmpty, let bodyString = String(data: body, encoding: .utf8) {
+            parts.append(contentsOf: ["--data", "'\(shellEscaped(bodyString))'"])
+        }
+
+        return parts.joined(separator: " ")
     }
 
     private func hasOutgoingNetworkPermission() -> Bool {
@@ -162,11 +265,27 @@ final class StudIPAPIClient {
         StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: path, queryItems: queryItems)
     }
 
-    private func send(url: URL, credentials: HTTPBasicCredentials) async throws -> Data {
+    private func send(
+        url: URL,
+        credentials: HTTPBasicCredentials,
+        method: StudIPHTTPMethod,
+        body: Data?,
+        acceptHeader: String?,
+        contentTypeHeader: String?
+    ) async throws -> StudIPHTTPResponse {
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method.rawValue
         request.timeoutInterval = 30
-        request.setValue("application/vnd.api+json, application/json", forHTTPHeaderField: "Accept")
+
+        if let acceptHeader {
+            request.setValue(acceptHeader, forHTTPHeaderField: "Accept")
+        }
+        if let contentTypeHeader {
+            request.setValue(contentTypeHeader, forHTTPHeaderField: "Content-Type")
+        }
+        if let body {
+            request.httpBody = body
+        }
 
         let raw = "\(credentials.username):\(credentials.password)"
         let token = Data(raw.utf8).base64EncodedString()
@@ -182,11 +301,11 @@ final class StudIPAPIClient {
         }
 
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8)
-            throw APIClientError.httpStatus(http.statusCode, body)
+            let bodyText = String(data: data, encoding: .utf8)
+            throw APIClientError.httpStatus(http.statusCode, bodyText)
         }
 
-        return normalizedResponseData(data)
+        return StudIPHTTPResponse(data: data, statusCode: http.statusCode, headers: http.allHeaderFields)
     }
 
     private func normalizedResponseData(_ data: Data) -> Data {
