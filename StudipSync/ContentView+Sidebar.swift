@@ -21,33 +21,38 @@ extension ContentView {
     }
 
     var pagesSidebar: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Navigation")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Navigation")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
 
-                List(SidebarPage.allCases) { page in
-                    Button {
-                        selectedSidebarPage = page
-                        selectedSemesterID = nil
-                        selectedCourseID = nil
-                    } label: {
-                        Label(page.title, systemImage: page.systemImage)
-                            .font(.body.weight(.medium))
-                            .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(SidebarPage.allCases) { page in
+                            Button {
+                                selectedSidebarPage = page
+                                selectedSemesterID = nil
+                                selectedCourseID = nil
+                            } label: {
+                                Label(page.title, systemImage: page.systemImage)
+                                    .font(.body.weight(.medium))
+                                    .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-                .listStyle(.sidebar)
-            }
 
-            Divider()
-            semesterSidebar
-                .layoutPriority(1)
+                Divider()
+
+                semesterSidebar
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     var contentForSelectedPage: some View {
@@ -137,28 +142,30 @@ extension ContentView {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
             } else {
-                List(filteredSemesterSidebarItems) { semester in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(semester.title)
-                                .font(.body.weight(.medium))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .help("Semester-ID: \(semester.id)")
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(filteredSemesterSidebarItems) { semester in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(semester.title)
+                                    .font(.body.weight(.medium))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .help("Semester-ID: \(semester.id)")
+                            }
+                            Spacer()
+                            Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
                         }
-                        Spacer()
-                        Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
-                    }
-                    .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedSemesterID = semester.id
-                        selectedCourseID = nil
-                    }
-                    .contextMenu {
-                        Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {
-                            semesterSelectionStore.setActive(!semesterSelectionStore.isActive(semesterID: semester.id), semesterID: semester.id)
+                        .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedSemesterID = semester.id
+                            selectedCourseID = nil
+                        }
+                        .contextMenu {
+                            Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {
+                                semesterSelectionStore.setActive(!semesterSelectionStore.isActive(semesterID: semester.id), semesterID: semester.id)
+                            }
                         }
                     }
                 }

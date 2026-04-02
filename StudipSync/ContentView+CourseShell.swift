@@ -90,9 +90,9 @@ extension ContentView {
                             ? "Keine Kurse fuer dieses Semester gefunden."
                             : "Keine Kurse fuer den aktuellen Filter gefunden."
                         )
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
 
                     if !courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("Tipp: Filter leeren oder Suchbegriff anpassen.")

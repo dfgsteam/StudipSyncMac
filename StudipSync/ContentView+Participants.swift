@@ -80,7 +80,7 @@ extension ContentView {
             + Self.participantActionsColumnWidth
             + 12 * 5
 
-        VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             Label("\(title) (\(participants.count))", systemImage: "person.3.sequence")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)

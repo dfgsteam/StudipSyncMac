@@ -2,22 +2,8 @@ import SwiftUI
 
 extension ContentView {
     var filteredInstitutions: [InstituteDTO] {
-        let query = institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = institutions.sorted {
+        institutions.sorted {
             instituteDisplayName($0).localizedCaseInsensitiveCompare(instituteDisplayName($1)) == .orderedAscending
-        }
-        guard !query.isEmpty else { return base }
-        return base.filter { institute in
-            let haystack = [
-                instituteDisplayName(institute),
-                institute.shortName,
-                institute.description,
-                institute.email,
-                institute.address
-            ]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(query)
         }
     }
 
@@ -364,20 +350,61 @@ extension ContentView {
         do {
             let query = institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
             let search = query.isEmpty ? nil : query
-            let fetched = try await repository.fetchInstitutes(offset: 0, limit: 1000, search: search)
-            institutions = fetched.sorted {
-                instituteDisplayName($0).localizedCaseInsensitiveCompare(instituteDisplayName($1)) == .orderedAscending
-            }
-            institutionsLoadedDate = Date()
+            do {
+                let fetched = try await repository.fetchInstitutes(offset: 0, limit: 1000, search: search)
+                institutions = fetched.sorted {
+                    instituteDisplayName($0).localizedCaseInsensitiveCompare(instituteDisplayName($1)) == .orderedAscending
+                }
+                institutionsLoadedDate = Date()
 
-            if resetSelection {
-                selectedInstituteID = nil
+                if resetSelection {
+                    selectedInstituteID = nil
+                }
+                if selectedInstituteID == nil || !institutions.contains(where: { canonicalStudIPID($0.id) == canonicalStudIPID(selectedInstituteID ?? "") }) {
+                    selectedInstituteID = institutions.first?.id
+                }
+                return
             }
-            if selectedInstituteID == nil || !institutions.contains(where: { canonicalStudIPID($0.id) == canonicalStudIPID(selectedInstituteID ?? "") }) {
-                selectedInstituteID = institutions.first?.id
+            catch {
+                if let search, !search.isEmpty,
+                   let fallbackAll = try? await repository.fetchInstitutes(offset: 0, limit: 1000, search: nil) {
+                    institutions = localInstituteFilterIfNeeded(institutes: fallbackAll, query: search).sorted {
+                        instituteDisplayName($0).localizedCaseInsensitiveCompare(instituteDisplayName($1)) == .orderedAscending
+                    }
+                    institutionsLoadedDate = Date()
+                    institutionsError = "Server-Suche nicht verfuegbar, lokal gefiltert."
+
+                    if resetSelection {
+                        selectedInstituteID = nil
+                    }
+                    if selectedInstituteID == nil || !institutions.contains(where: { canonicalStudIPID($0.id) == canonicalStudIPID(selectedInstituteID ?? "") }) {
+                        selectedInstituteID = institutions.first?.id
+                    }
+                } else {
+                    institutionsError = "Fehler beim Laden der Einrichtungen: \(error.localizedDescription)"
+                }
             }
-        } catch {
-            institutionsError = "Fehler beim Laden der Einrichtungen: \(error.localizedDescription)"
+        }
+    }
+
+    func localInstituteFilterIfNeeded(institutes: [InstituteDTO], query: String?) -> [InstituteDTO] {
+        guard let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else {
+            return institutes
+        }
+
+        let normalizedQuery = query.lowercased()
+        return institutes.filter { institute in
+            let haystack = [
+                instituteDisplayName(institute),
+                institute.shortName,
+                institute.description,
+                institute.email,
+                institute.address,
+                institute.id
+            ]
+                .compactMap { $0?.lowercased() }
+                .joined(separator: " ")
+            return haystack.contains(normalizedQuery)
         }
     }
 

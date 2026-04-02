@@ -332,28 +332,7 @@ extension StudIPResourceRepository {
     // MARK: - Institutes
 
     func fetchInstitutes(offset: Int = 0, limit: Int = 200, search: String? = nil) async throws -> [InstituteDTO] {
-        do {
-            return try await institutes().fetchInstitutes(offset: offset, limit: limit, search: search)
-        } catch {
-            if let search, !search.isEmpty {
-                let all = try await institutes().fetchInstitutes(offset: offset, limit: limit, search: nil)
-                let normalizedSearch = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !normalizedSearch.isEmpty else { return all }
-                return all.filter { institute in
-                    let haystack = [
-                        institute.displayName,
-                        institute.shortName,
-                        institute.description,
-                        institute.email,
-                        institute.address
-                    ]
-                        .compactMap { $0?.lowercased() }
-                        .joined(separator: " ")
-                    return haystack.contains(normalizedSearch)
-                }
-            }
-            throw error
-        }
+        try await institutes().fetchInstitutes(offset: offset, limit: limit, search: search)
     }
 
     func fetchInstitute(id: String) async throws -> InstituteDTO {

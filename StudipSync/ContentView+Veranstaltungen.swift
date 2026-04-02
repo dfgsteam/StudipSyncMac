@@ -77,9 +77,9 @@ extension ContentView {
                                  ? "Noch keine Veranstaltungen geladen. Starte eine Suche oder druecke 'Neu laden'."
                                  : "Keine Veranstaltungen fuer den aktuellen Filter gefunden."
                             )
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                         }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                         if !courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text("Tipp: Suchbegriff anpassen oder leeren.")
                                 .font(.caption)
@@ -348,8 +348,7 @@ extension ContentView {
                 offset: 0,
                 limit: 1000
             )
-            let filtered = localCourseFilterIfNeeded(courses: fetched, query: search)
-            catalogCourses = sortCoursesForDisplay(filtered)
+            catalogCourses = sortCoursesForDisplay(fetched)
             selectedCatalogCourseID = catalogCourses.first?.id
             selectedCatalogCourseDetail = nil
             selectedCatalogCourseDetailError = nil
