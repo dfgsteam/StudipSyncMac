@@ -247,9 +247,7 @@ extension ContentView {
     }
 
     func openParticipantInUserDetail(_ participant: StudIPResourceRepository.CourseParticipant) {
-        selectedSidebarPage = .benutzer
-        selectedSemesterID = nil
-        selectedCourseID = nil
+        navigateToSidebarPage(.benutzer)
         selectUserForDetail(participant.userID)
 
         Task {

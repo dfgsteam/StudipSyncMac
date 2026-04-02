@@ -241,8 +241,7 @@ extension ContentView {
 
                     Button("Erstes Semester oeffnen") {
                         if let first = semesterViewModel.semesters.first {
-                            selectedSemesterID = first.id
-                            selectedCourseID = nil
+                            selectSidebarSemester(first.id)
                         }
                     }
                     .buttonStyle(.bordered)

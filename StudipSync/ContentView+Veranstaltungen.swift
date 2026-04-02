@@ -18,12 +18,6 @@ extension ContentView {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoadingCatalogCourses)
 
-                        Button("Neu laden") {
-                            Task { await loadCatalogCourses(force: true) }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isLoadingCatalogCourses)
-
                         if !courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Button {
                                 courseCatalogQuery = ""
@@ -74,7 +68,7 @@ extension ContentView {
                             Text("Die Trefferliste konnte nicht geladen werden.")
                         } else {
                             Text(courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                 ? "Noch keine Veranstaltungen geladen. Starte eine Suche oder druecke 'Neu laden'."
+                                 ? "Noch keine Veranstaltungen geladen. Starte eine Suche, um Ergebnisse vom Server zu laden."
                                  : "Keine Veranstaltungen fuer den aktuellen Filter gefunden."
                             )
                             .font(.callout)
@@ -126,18 +120,6 @@ extension ContentView {
                 }
 
                 Spacer()
-
-                if let selectedCatalogCourseID {
-                    Button("Neu laden") {
-                        Task {
-                            await loadSelectedCatalogCourseDetail(force: true)
-                            await loadEnrolledCourses(force: true)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isLoadingCatalogCourseDetail || isLoadingEnrolledCourses || enrollmentInFlightCourseIDs.contains(selectedCatalogCourseID))
-                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)

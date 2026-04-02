@@ -56,6 +56,12 @@ struct ContentView: View {
         let url: URL
     }
 
+    struct SidebarNavigationState: Equatable {
+        let page: SidebarPage
+        let semesterID: String?
+        let courseID: String?
+    }
+
     let statusController: MenuBarStatusController
     let syncScheduler: SyncScheduler
     let semesterSelectionStore: SemesterSelectionStore
@@ -66,6 +72,9 @@ struct ContentView: View {
 
     @State var semesterViewModel: SemesterListViewModel
     @State var selectedSidebarPage: SidebarPage? = .start
+    @State var sidebarNavigationBackStack: [SidebarNavigationState] = []
+    @State var sidebarNavigationForwardStack: [SidebarNavigationState] = []
+    @State var isRestoringSidebarNavigationState = false
     @State var sidebarSemesterSearchQuery = ""
     @State var selectedSemesterID: String?
     @State var selectedCourseID: String?
@@ -385,6 +394,74 @@ struct ContentView: View {
 
     func isSelectedSemester(_ semesterID: String) -> Bool {
         selectedSemesterID == semesterID
+    }
+
+    var currentSidebarNavigationState: SidebarNavigationState {
+        SidebarNavigationState(
+            page: selectedSidebarPage ?? .start,
+            semesterID: selectedSemesterID,
+            courseID: selectedCourseID
+        )
+    }
+
+    var canGoBackInSidebarNavigation: Bool {
+        !sidebarNavigationBackStack.isEmpty
+    }
+
+    var canGoForwardInSidebarNavigation: Bool {
+        !sidebarNavigationForwardStack.isEmpty
+    }
+
+    func navigateToSidebarState(_ newState: SidebarNavigationState) {
+        let currentState = currentSidebarNavigationState
+        guard currentState != newState else { return }
+
+        if !isRestoringSidebarNavigationState {
+            sidebarNavigationBackStack.append(currentState)
+            sidebarNavigationForwardStack.removeAll()
+        }
+
+        selectedSidebarPage = newState.page
+        selectedSemesterID = newState.semesterID
+        selectedCourseID = newState.courseID
+    }
+
+    func navigateToSidebarPage(_ page: SidebarPage) {
+        navigateToSidebarState(
+            SidebarNavigationState(page: page, semesterID: nil, courseID: nil)
+        )
+    }
+
+    func selectSidebarSemester(_ semesterID: String) {
+        navigateToSidebarState(
+            SidebarNavigationState(page: selectedSidebarPage ?? .start, semesterID: semesterID, courseID: nil)
+        )
+    }
+
+    func selectSidebarCourse(_ courseID: String) {
+        navigateToSidebarState(
+            SidebarNavigationState(page: selectedSidebarPage ?? .start, semesterID: selectedSemesterID, courseID: courseID)
+        )
+    }
+
+    func goBackInSidebarNavigation() {
+        guard let previousState = sidebarNavigationBackStack.popLast() else { return }
+        sidebarNavigationForwardStack.append(currentSidebarNavigationState)
+        isRestoringSidebarNavigationState = true
+        selectedSidebarPage = previousState.page
+        selectedSemesterID = previousState.semesterID
+        selectedCourseID = previousState.courseID
+        isRestoringSidebarNavigationState = false
+    }
+
+    func goForwardInSidebarNavigation() {
+        guard let nextState = sidebarNavigationForwardStack.popLast() else { return }
+        sidebarNavigationBackStack.append(currentSidebarNavigationState)
+        isRestoringSidebarNavigationState = true
+        selectedSidebarPage = nextState.page
+        selectedSemesterID = nextState.semesterID
+        selectedCourseID = nextState.courseID
+        isRestoringSidebarNavigationState = false
     }
 
     func startScheduleRow(_ entry: ScheduleEntryDTO) -> some View {
@@ -1088,7 +1165,7 @@ struct ContentView: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture {
-            selectedCourseID = course.id
+            selectSidebarCourse(course.id)
             Task(priority: .utility) {
                 await prefetchAllTabContentForCourse(course.id)
             }

@@ -23,25 +23,43 @@ extension ContentView {
     var pagesSidebar: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
                     Text("Navigation")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(SidebarPage.allCases) { page in
-                            Button {
-                                selectedSidebarPage = page
-                                selectedSemesterID = nil
-                                selectedCourseID = nil
-                            } label: {
-                                Label(page.title, systemImage: page.systemImage)
-                                    .font(.body.weight(.medium))
-                                    .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer()
+
+                    Button {
+                        goBackInSidebarNavigation()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!canGoBackInSidebarNavigation)
+                    .help("Zurück")
+
+                    Button {
+                        goForwardInSidebarNavigation()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!canGoForwardInSidebarNavigation)
+                    .help("Vor")
+                }
+
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(SidebarPage.allCases) { page in
+                        Button {
+                            navigateToSidebarPage(page)
+                        } label: {
+                            Label(page.title, systemImage: page.systemImage)
+                                .font(.body.weight(.medium))
+                                .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
                         }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
@@ -159,8 +177,7 @@ extension ContentView {
                         .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            selectedSemesterID = semester.id
-                            selectedCourseID = nil
+                            selectSidebarSemester(semester.id)
                         }
                         .contextMenu {
                             Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {

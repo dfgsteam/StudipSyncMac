@@ -53,12 +53,6 @@ extension ContentView {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoadingInstitutions)
 
-                        Button("Neu laden") {
-                            Task { await loadInstitutions(force: true, resetSelection: false) }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isLoadingInstitutions)
-
                         if !institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Button {
                                 institutionSearchQuery = ""
@@ -99,7 +93,7 @@ extension ContentView {
                 if filteredInstitutions.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                             ? "Noch keine Einrichtungen geladen. Starte eine Suche oder druecke 'Neu laden'."
+                            ? "Noch keine Einrichtungen geladen. Starte eine Suche, um Ergebnisse vom Server zu laden."
                              : "Keine Einrichtungen fuer den aktuellen Filter gefunden."
                         )
                         .font(.callout)
@@ -143,13 +137,6 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-
-                Button("Neu laden") {
-                    Task { await loadCoursesForSelectedInstitutionSemester(force: true) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedInstitute == nil || selectedInstitutionSemesterID == nil)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
