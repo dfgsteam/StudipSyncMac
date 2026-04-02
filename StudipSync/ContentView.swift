@@ -7,6 +7,7 @@ struct ContentView: View {
         case start
         case benutzer
         case einrichtungen
+        case platzhalter
 
         var id: String { rawValue }
 
@@ -15,6 +16,7 @@ struct ContentView: View {
             case .start: return "Start"
             case .benutzer: return "Benutzer"
             case .einrichtungen: return "Einrichtungen"
+            case .platzhalter: return "Platzhalter"
             }
         }
 
@@ -23,6 +25,7 @@ struct ContentView: View {
             case .start: return "house"
             case .benutzer: return "person.2"
             case .einrichtungen: return "building.2"
+            case .platzhalter: return "square.dashed"
             }
         }
     }
@@ -240,7 +243,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .listStyle(.sidebar)
-            .frame(minHeight: 150, maxHeight: 170)
+            .frame(minHeight: 180, maxHeight: 220)
 
             Divider()
             semesterSidebar
@@ -259,6 +262,8 @@ struct ContentView: View {
                     benutzerContentColumn
                 case .einrichtungen:
                     einrichtungenContentColumn
+                case .platzhalter:
+                    platzhalterContentColumn
                 }
             }
         }
@@ -276,6 +281,8 @@ struct ContentView: View {
                     benutzerDetailColumn
                 case .einrichtungen:
                     einrichtungenDetailColumn
+                case .platzhalter:
+                    platzhalterDetailColumn
                 }
             }
         }
@@ -409,6 +416,20 @@ struct ContentView: View {
     private var einrichtungenDetailColumn: some View {
         staticMenuDetailColumn(
             title: "Einrichtungen",
+            subtitle: "Statische Testseite: Detailbereich"
+        )
+    }
+
+    private var platzhalterContentColumn: some View {
+        staticMenuContentColumn(
+            title: "Platzhalter",
+            subtitle: "Diese Seite ist ein Platzhalter vor dem Veranstaltungsbereich."
+        )
+    }
+
+    private var platzhalterDetailColumn: some View {
+        staticMenuDetailColumn(
+            title: "Platzhalter",
             subtitle: "Statische Testseite: Detailbereich"
         )
     }
