@@ -315,6 +315,8 @@ struct NewsDTO: Decodable, Hashable, Identifiable {
     let title: String?
     let content: String?
     let commentsAllowed: Bool?
+    let mkdate: String?
+    let chdate: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -325,6 +327,8 @@ struct NewsDTO: Decodable, Hashable, Identifiable {
         case title
         case content
         case commentsAllowed = "comments-allowed"
+        case mkdate
+        case chdate
     }
 
     init(from decoder: Decoder) throws {
@@ -338,6 +342,8 @@ struct NewsDTO: Decodable, Hashable, Identifiable {
         title = attributes?.decodeNonEmptyString(forKey: .title)
         content = attributes?.decodeNonEmptyString(forKey: .content)
         commentsAllowed = attributes?.decodeBoolLossy(forKey: .commentsAllowed)
+        mkdate = attributes?.decodeNonEmptyString(forKey: .mkdate)
+        chdate = attributes?.decodeNonEmptyString(forKey: .chdate)
     }
 }
 
@@ -374,10 +380,12 @@ struct BlubberPostingDTO: Decodable, Hashable, Identifiable {
     let mkdate: String?
     let chdate: String?
     let discussionTime: String?
+    let authorID: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case attributes
+        case relationships
     }
 
     enum AttributesCodingKeys: String, CodingKey {
@@ -389,6 +397,10 @@ struct BlubberPostingDTO: Decodable, Hashable, Identifiable {
         case discussionTime = "discussion-time"
     }
 
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case author
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         guard let rawID = container.decodeStringLossy(forKey: .id) else {
@@ -396,6 +408,7 @@ struct BlubberPostingDTO: Decodable, Hashable, Identifiable {
         }
 
         let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
 
         id = canonicalStudIPID(rawID)
         content = attributes?.decodeNonEmptyString(forKey: .content)
@@ -404,6 +417,7 @@ struct BlubberPostingDTO: Decodable, Hashable, Identifiable {
         mkdate = attributes?.decodeNonEmptyString(forKey: .mkdate)
         chdate = attributes?.decodeNonEmptyString(forKey: .chdate)
         discussionTime = attributes?.decodeNonEmptyString(forKey: .discussionTime)
+        authorID = (try? relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .author)?.data?.id).map(canonicalStudIPID)
     }
 }
 

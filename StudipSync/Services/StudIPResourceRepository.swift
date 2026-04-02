@@ -9,6 +9,7 @@ actor StudIPResourceRepository {
     typealias CourseFileRef = StudIPCourseFileRef
     typealias CourseChatThread = StudIPCourseChatThread
     typealias CourseWikiPage = StudIPCourseWikiPage
+    typealias CourseForumCategory = ForumCategoryDTO
 
     private let defaultSemesterOffset = 0
     private let defaultSemesterLimit = 100

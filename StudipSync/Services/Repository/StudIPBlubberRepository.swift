@@ -157,6 +157,19 @@ actor StudIPBlubberRepository {
         return try responseDecoder.parseEntity(from: data, fallbackObjectKeys: ["data", "blubber-streams", "item"])
     }
 
+    func fetchThreadComments(threadID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [BlubberPostingDTO] {
+        let escapedID = StudIPRepositoryUtilities.escapedPathID(threadID)
+        let data = try await apiClient.performRequest(
+            path: "/v1/blubber-threads/\(escapedID)/comments",
+            queryItems: StudIPRepositoryUtilities.pageQueryItems(offset: offset, limit: limit)
+        )
+
+        return try responseDecoder.parseCollection(
+            from: data,
+            fallbackCollectionKeys: ["data", "comments", "blubber-postings", "collection", "items"]
+        )
+    }
+
     private func fetchRelationship(path: String) async throws -> [JSONAPIResourceIdentifierDTO] {
         let data = try await apiClient.performRequest(path: path)
 

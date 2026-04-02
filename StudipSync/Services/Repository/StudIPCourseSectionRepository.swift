@@ -255,13 +255,13 @@ actor StudIPCourseSectionRepository {
         return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
     }
 
-    private nonisolated static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
+    private static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    private nonisolated static let apiISO8601: ISO8601DateFormatter = {
+    private static let apiISO8601: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter

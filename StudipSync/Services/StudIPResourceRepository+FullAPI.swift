@@ -243,6 +243,10 @@ extension StudIPResourceRepository {
         try await blubber().fetchStream(id: id)
     }
 
+    func fetchBlubberThreadComments(threadID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [BlubberPostingDTO] {
+        try await blubber().fetchThreadComments(threadID: threadID, offset: offset, limit: limit)
+    }
+
     // MARK: - Forum
 
     func fetchCourseForumCategories(courseID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [ForumCategoryDTO] {
