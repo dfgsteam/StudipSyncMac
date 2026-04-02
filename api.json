@@ -1,0 +1,2893 @@
+{
+  "data": [
+    {
+      "type": "slim-routes",
+      "id": "route0",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route1",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": "get-myself",
+        "pattern": "/v1/users/me"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route2",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route3",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route4",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/activitystream"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route5",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/institute-memberships"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route6",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/course-memberships"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route7",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/course-memberships/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route8",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/course-memberships/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route9",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": "get-schedule",
+        "pattern": "/v1/users/{id}/schedule"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route10",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/schedule-entries/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route11",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/seminar-cycle-dates/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route12",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/config-values"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route13",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/config-values/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route14",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/config-values/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route15",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/status-groups/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route16",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/blubber-threads"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route17",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/institutes/{id}/blubber-threads"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route18",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/studip/blubber-threads"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route19",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/blubber-threads"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route20",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route21",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route22",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route23",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route24",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route25",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route26",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route27",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route28",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route29",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route30",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/blubber-threads/{id}/relationships/mentions"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route31",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/relationships/blubber-default-thread"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route32",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/{type:courses|institutes|users}/{id}/consultations"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route33",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-blocks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route34",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-blocks/{id}/slots"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route35",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-slots/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route36",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-slots/{id}/bookings"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route37",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-slots/{id}/bookings"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route38",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-bookings"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route39",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-bookings/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route40",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/consultation-bookings/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route41",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/contacts"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route42",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/relationships/contacts"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route43",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route44",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route45",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/courses"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route46",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/memberships"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route47",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/relationships/memberships"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route48",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/status-groups"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route49",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/sem-classes"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route50",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/sem-classes/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route51",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/sem-classes/{id}/sem-types"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route52",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/sem-types"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route53",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/sem-types/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route54",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/{type:courses|users|sharedusers}/{id}/courseware"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route55",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-instances/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route56",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-instances/{id}/relationships/bookmarks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route57",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-instances/{id}/bookmarks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route58",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/courseware-bookmarks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route59",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/relationships/courseware-bookmarks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route60",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route61",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route62",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route63",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route64",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/relationships/edit-blocker"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route65",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/relationships/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route66",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route67",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/copy"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route68",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route69",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route70",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route71",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route72",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}/blocks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route73",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}/relationships/blocks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route74",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}/relationships/edit-blocker"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route75",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-containers/{id}/copy"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route76",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route77",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route78",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route79",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route80",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route81",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/children"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route82",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/containers"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route83",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/relationships/containers"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route84",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/relationships/children"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route85",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/descendants"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route86",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/relationships/edit-blocker"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route87",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/image"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route88",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/image"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route89",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/copy"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route90",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/link"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route91",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route92",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route93",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route94",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route95",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route96",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements/{id}/feedback"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route97",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-feedback"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route98",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route99",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route100",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-element-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route101",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements-shared"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route102",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-structural-elements-released"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route103",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/user-data-field"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route104",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-user-data-fields/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route105",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-user-data-fields/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route106",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/user-progress"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route107",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-user-progresses/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route108",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units/{id}/courseware-user-progresses"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route109",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-user-progresses/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route110",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route111",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route112",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route113",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route114",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route115",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-blocks/{id}/feedback"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route116",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-feedback"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route117",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route118",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route119",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-block-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route120",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-tasks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route121",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-tasks"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route122",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-tasks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route123",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-tasks/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route124",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-groups/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route125",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-groups"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route126",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route127",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-feedback"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route128",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route129",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-task-feedback/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route130",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-templates/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route131",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-templates"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route132",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-templates"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route133",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-templates/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route134",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-templates/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route135",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-public-links/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route136",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-public-links"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route137",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-public-links"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route138",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-public-links/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route139",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-public-links/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route140",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/courseware-units"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route141",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/courseware-units"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route142",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route143",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route144",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route145",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route146",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-units/{id}/copy"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route147",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route148",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/courseware-clipboards"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route149",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/courseware-clipboards/{type:courseware-blocks|courseware-containers}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route150",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route151",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route152",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route153",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route154",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courseware-clipboards/{id}/insert"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route155",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/events"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route156",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/events"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route157",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/events.ics"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route158",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/feedback-elements/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route159",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/feedback-elements/{id}/entries"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route160",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/feedback-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route161",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}/feedback-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route162",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/feedback-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route163",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/feedback-entries/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route164",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/terms-of-use"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route165",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/terms-of-use/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route166",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/{type:courses|institutes|users}/{id}/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route167",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/{type:courses|institutes|users}/{id}/folders"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route168",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/{type:courses|institutes|users}/{id}/folders"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route169",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route170",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route171",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route172",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}/relationships/terms-of-use"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route173",
+      "attributes": {
+        "methods": [
+          "HEAD"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}/content"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route174",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}/content"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route175",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/file-refs/{id}/content"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route176",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route177",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route178",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route179",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/copy"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route180",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route181",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/folders"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route182",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route183",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/folders/{id}/folders"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route184",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/files/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route185",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/files/{id}/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route186",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/files/{id}/relationships/file-refs"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route187",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/forum-categories"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route188",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-entries/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route189",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-entries/{id}/entries"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route190",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-categories/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route191",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-categories/{id}/entries"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route192",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-entries/{id}/entries"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route193",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-categories/{id}/entries"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route194",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/forum-categories"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route195",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-categories/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route196",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-entries/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route197",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-categories/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route198",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/forum-entries/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route199",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/institute-memberships/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route200",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/institutes/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route201",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/institutes"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route202",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/institutes/{id}/status-groups"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route203",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/lti-tools/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route204",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/lti-tools"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route205",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/inbox"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route206",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/outbox"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route207",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/messages"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route208",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/messages/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route209",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/messages/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route210",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/messages/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route211",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route212",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route213",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route214",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route215",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route216",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route217",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route218",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/users/{id}/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route219",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}/comments"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route220",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route221",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/studip/news"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route222",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route223",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/comments/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route224",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/news/{id}/relationships/ranges"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route225",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route226",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route227",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route228",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route229",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route230",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/stock-images/{id}/blob"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route231",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route232",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route233",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas/{id}/children"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route234",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas/{id}/courses"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route235",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas/{id}/institute"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route236",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/study-areas/{id}/parent"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route237",
+      "attributes": {
+        "methods": [
+          "GET",
+          "PATCH",
+          "POST",
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/wiki-pages/{id:.+}/relationships/parent"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route238",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/wiki-pages/{id:.+}/children"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route239",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/wiki-pages/{id:.+}/descendants"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route240",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/wiki-pages"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route241",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": "get-wiki-page",
+        "pattern": "/v1/wiki-pages/{id:.+}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route242",
+      "attributes": {
+        "methods": [
+          "POST"
+        ],
+        "name": null,
+        "pattern": "/v1/courses/{id}/wiki-pages"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route243",
+      "attributes": {
+        "methods": [
+          "PATCH"
+        ],
+        "name": null,
+        "pattern": "/v1/wiki-pages/{id:.+}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route244",
+      "attributes": {
+        "methods": [
+          "DELETE"
+        ],
+        "name": null,
+        "pattern": "/v1/wiki-pages/{id:.+}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route245",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/holidays"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route246",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/semesters"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route247",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": "get-semester",
+        "pattern": "/v1/semesters/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route248",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/studip/properties"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route249",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/public/courseware/{link_id}/courseware-structural-elements/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route250",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/public/courseware/{link_id}/courseware-structural-elements"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route251",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route252",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/{id}/children"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route253",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/{id}/courseinfo"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route254",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/{id}/courses"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route255",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/course/pathinfo/{classname}/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route256",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/tree-node/course/details/{id}"
+      }
+    },
+    {
+      "type": "slim-routes",
+      "id": "route257",
+      "attributes": {
+        "methods": [
+          "GET"
+        ],
+        "name": null,
+        "pattern": "/v1/discovery"
+      }
+    }
+  ]
+}

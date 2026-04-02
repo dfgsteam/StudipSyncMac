@@ -6,7 +6,8 @@ struct SettingsView: View {
     let keychainService: KeychainService
 
     @State private var baseURLText: String = ""
-    @State private var apiKeyText: String = ""
+    @State private var usernameText: String = ""
+    @State private var passwordText: String = ""
     @State private var message: String = ""
 
     var body: some View {
@@ -18,15 +19,16 @@ struct SettingsView: View {
                     saveBaseURL()
                 }
 
-                SecureField("API-Key", text: $apiKeyText)
+                TextField("Username", text: $usernameText)
+                SecureField("Passwort", text: $passwordText)
 
                 HStack {
-                    Button("API-Key speichern") {
-                        saveAPIKey()
+                    Button("Login speichern") {
+                        saveCredentials()
                     }
 
-                    Button("API-Key entfernen") {
-                        deleteAPIKey()
+                    Button("Login entfernen") {
+                        deleteCredentials()
                     }
                 }
             }
@@ -62,7 +64,7 @@ struct SettingsView: View {
         .padding()
         .onAppear {
             baseURLText = settingsStore.configuration.baseURL.absoluteString
-            loadAPIKey()
+            loadCredentials()
         }
     }
 
@@ -76,34 +78,49 @@ struct SettingsView: View {
         message = "Base-URL gespeichert."
     }
 
-    private func saveAPIKey() {
+    private func saveCredentials() {
+        let username = usernameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty, !passwordText.isEmpty else {
+            message = "Bitte Username und Passwort eingeben."
+            return
+        }
+
         do {
-            try keychainService.saveAPIKey(apiKeyText, for: settingsStore.configuration.baseURL)
-            message = "API-Key sicher gespeichert."
-            AppLogger.secretRedacted("API key updated")
+            let credentials = HTTPBasicCredentials(username: username, password: passwordText)
+            try keychainService.saveCredentials(credentials, for: settingsStore.configuration.baseURL)
+            message = "Login sicher gespeichert."
+            AppLogger.secretRedacted("Credentials updated")
         } catch {
-            message = "API-Key konnte nicht gespeichert werden."
-            AppLogger.error("Saving API key failed: \(error.localizedDescription)")
+            message = "Login konnte nicht gespeichert werden."
+            AppLogger.error("Saving credentials failed: \(error.localizedDescription)")
         }
     }
 
-    private func deleteAPIKey() {
+    private func deleteCredentials() {
         do {
-            try keychainService.deleteAPIKey(for: settingsStore.configuration.baseURL)
-            apiKeyText = ""
-            message = "API-Key entfernt."
+            try keychainService.deleteCredentials(for: settingsStore.configuration.baseURL)
+            usernameText = ""
+            passwordText = ""
+            message = "Login entfernt."
         } catch {
-            message = "API-Key konnte nicht entfernt werden."
-            AppLogger.error("Deleting API key failed: \(error.localizedDescription)")
+            message = "Login konnte nicht entfernt werden."
+            AppLogger.error("Deleting credentials failed: \(error.localizedDescription)")
         }
     }
 
-    private func loadAPIKey() {
+    private func loadCredentials() {
         do {
-            apiKeyText = try keychainService.readAPIKey(for: settingsStore.configuration.baseURL) ?? ""
+            if let credentials = try keychainService.readCredentials(for: settingsStore.configuration.baseURL) {
+                usernameText = credentials.username
+                passwordText = credentials.password
+            } else {
+                usernameText = ""
+                passwordText = ""
+            }
         } catch {
-            apiKeyText = ""
-            AppLogger.error("Reading API key failed: \(error.localizedDescription)")
+            usernameText = ""
+            passwordText = ""
+            AppLogger.error("Reading credentials failed: \(error.localizedDescription)")
         }
     }
 

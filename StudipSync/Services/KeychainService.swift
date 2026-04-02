@@ -6,12 +6,17 @@ enum KeychainError: Error {
     case invalidData
 }
 
-struct KeychainService {
-    private let service = "StudipSync.APIKey"
+struct HTTPBasicCredentials: Codable {
+    let username: String
+    let password: String
+}
 
-    func saveAPIKey(_ key: String, for baseURL: URL) throws {
+struct KeychainService {
+    private let service = "StudipSync.Credentials"
+
+    func saveCredentials(_ credentials: HTTPBasicCredentials, for baseURL: URL) throws {
         let account = accountName(for: baseURL)
-        let data = Data(key.utf8)
+        let data = try JSONEncoder().encode(credentials)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -32,7 +37,7 @@ struct KeychainService {
         }
     }
 
-    func readAPIKey(for baseURL: URL) throws -> String? {
+    func readCredentials(for baseURL: URL) throws -> HTTPBasicCredentials? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -52,15 +57,14 @@ struct KeychainService {
             throw KeychainError.unexpectedStatus(status)
         }
 
-        guard let data = result as? Data,
-              let apiKey = String(data: data, encoding: .utf8) else {
+        guard let data = result as? Data else {
             throw KeychainError.invalidData
         }
 
-        return apiKey
+        return try JSONDecoder().decode(HTTPBasicCredentials.self, from: data)
     }
 
-    func deleteAPIKey(for baseURL: URL) throws {
+    func deleteCredentials(for baseURL: URL) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

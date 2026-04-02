@@ -9,7 +9,7 @@ actor MetadataCache {
 
     private let fileManager: FileManager
     private let cacheDirectory: URL
-    private let version = 1
+    private let version = 2
 
     init(fileManager: FileManager = .default, cacheRootURL: URL? = nil) {
         self.fileManager = fileManager

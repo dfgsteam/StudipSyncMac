@@ -1,10 +1,79 @@
 import Foundation
 import Security
 
+enum StudIPAPIPathResolver {
+    private static let canonicalAPIPrefix = "/jsonapi.php/v1"
+
+    static func buildURL(baseURL: URL, path: String, queryItems: [URLQueryItem]) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        let basePath = trimmedTrailingSlash(components.path)
+        let apiBasePath = normalizedAPIBasePath(from: basePath)
+        let endpointPath = normalizedEndpointPath(path)
+
+        components.path = apiBasePath + endpointPath
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        return components.url
+    }
+
+    static func normalizedAPIBasePath(from basePath: String) -> String {
+        if basePath.hasSuffix(canonicalAPIPrefix) {
+            return basePath
+        }
+        if basePath.hasSuffix("/jsonapi.php") {
+            return basePath + "/v1"
+        }
+        if basePath.hasSuffix("/v1") {
+            return basePath
+        }
+        if basePath.isEmpty {
+            return canonicalAPIPrefix
+        }
+        return basePath + canonicalAPIPrefix
+    }
+
+    static func normalizedEndpointPath(_ path: String) -> String {
+        let candidate = path.hasPrefix("/") ? path : "/\(path)"
+
+        if let suffix = removingPrefix("/jsonapi.php/v1", from: candidate) {
+            return suffix
+        }
+        if let suffix = removingPrefix("/v1", from: candidate) {
+            return suffix
+        }
+        return candidate
+    }
+
+    private static func trimmedTrailingSlash(_ path: String) -> String {
+        if path == "/" {
+            return ""
+        }
+        if path.hasSuffix("/") {
+            return String(path.dropLast())
+        }
+        return path
+    }
+
+    private static func removingPrefix(_ prefix: String, from value: String) -> String? {
+        if value == prefix {
+            return ""
+        }
+
+        let prefixWithSlash = "\(prefix)/"
+        guard value.hasPrefix(prefixWithSlash) else {
+            return nil
+        }
+
+        return "/\(value.dropFirst(prefixWithSlash.count))"
+    }
+}
+
 final class StudIPAPIClient {
     enum APIClientError: LocalizedError {
         case invalidPath
-        case missingAPIKey
+        case missingCredentials
         case invalidResponse
         case unauthorized
         case sandboxNetworkPermissionMissing
@@ -14,12 +83,12 @@ final class StudIPAPIClient {
             switch self {
             case .invalidPath:
                 return "Ungueltiger API-Pfad."
-            case .missingAPIKey:
-                return "Kein API-Key hinterlegt."
+            case .missingCredentials:
+                return "Kein Login hinterlegt. Bitte Username/Passwort speichern."
             case .invalidResponse:
                 return "Ungueltige API-Antwort."
             case .unauthorized:
-                return "Autorisierung fehlgeschlagen (API-Key/Auth-Schema pruefen)."
+                return "Autorisierung fehlgeschlagen (Username/Passwort pruefen)."
             case .sandboxNetworkPermissionMissing:
                 return "App-Sandbox blockiert Netzwerk. Aktiviere in den Target Capabilities: Outgoing Connections (Client)."
             case .httpStatus(let code, let body):
@@ -29,11 +98,6 @@ final class StudIPAPIClient {
                 return "HTTP-Fehler: \(code)"
             }
         }
-    }
-
-    private enum AuthScheme {
-        case bearer
-        case basic
     }
 
     private let session: URLSession
@@ -56,15 +120,28 @@ final class StudIPAPIClient {
             throw APIClientError.invalidPath
         }
 
-        guard let key = try keychainService.readAPIKey(for: baseURL), !key.isEmpty else {
-            throw APIClientError.missingAPIKey
+        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+            throw APIClientError.missingCredentials
         }
 
-        do {
-            return try await send(url: url, apiKey: key, scheme: .bearer)
-        } catch APIClientError.unauthorized {
-            return try await send(url: url, apiKey: key, scheme: .basic)
+        return try await send(url: url, credentials: credentials)
+    }
+
+    func makeCURL(path: String, queryItems: [URLQueryItem] = []) async throws -> String {
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        guard let url = buildURL(baseURL: baseURL, path: path, queryItems: queryItems) else {
+            throw APIClientError.invalidPath
         }
+
+        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+            throw APIClientError.missingCredentials
+        }
+
+        let raw = "\(credentials.username):\(credentials.password)"
+        let token = Data(raw.utf8).base64EncodedString()
+        let authorizationHeader = "Authorization: Basic \(token)"
+
+        return "curl -i -X GET '\(shellEscaped(url.absoluteString))' -H '\(shellEscaped(authorizationHeader))'"
     }
 
     private func hasOutgoingNetworkPermission() -> Bool {
@@ -82,34 +159,18 @@ final class StudIPAPIClient {
     }
 
     private func buildURL(baseURL: URL, path: String, queryItems: [URLQueryItem]) -> URL? {
-        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-
-        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
-        let basePath = baseURL.path.hasSuffix("/") ? String(baseURL.path.dropLast()) : baseURL.path
-        components.path = basePath + normalizedPath
-        if !queryItems.isEmpty {
-            components.queryItems = queryItems
-        }
-
-        return components.url
+        StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: path, queryItems: queryItems)
     }
 
-    private func send(url: URL, apiKey: String, scheme: AuthScheme) async throws -> Data {
+    private func send(url: URL, credentials: HTTPBasicCredentials) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/vnd.api+json, application/json", forHTTPHeaderField: "Accept")
 
-        switch scheme {
-        case .bearer:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        case .basic:
-            let raw = "\(apiKey):"
-            let token = Data(raw.utf8).base64EncodedString()
-            request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
-        }
+        let raw = "\(credentials.username):\(credentials.password)"
+        let token = Data(raw.utf8).base64EncodedString()
+        request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -125,6 +186,36 @@ final class StudIPAPIClient {
             throw APIClientError.httpStatus(http.statusCode, body)
         }
 
-        return data
+        return normalizedResponseData(data)
+    }
+
+    private func normalizedResponseData(_ data: Data) -> Data {
+        var current = data
+
+        for _ in 0..<2 {
+            guard let decoded = try? JSONSerialization.jsonObject(with: current) else {
+                return current
+            }
+
+            if let stringPayload = decoded as? String {
+                let trimmed = stringPayload.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard (trimmed.hasPrefix("{") && trimmed.hasSuffix("}"))
+                    || (trimmed.hasPrefix("[") && trimmed.hasSuffix("]")) else {
+                    return current
+                }
+                if let reencoded = trimmed.data(using: .utf8) {
+                    current = reencoded
+                    continue
+                }
+            }
+
+            return current
+        }
+
+        return current
+    }
+
+    private func shellEscaped(_ string: String) -> String {
+        string.replacingOccurrences(of: "'", with: "'\\''")
     }
 }

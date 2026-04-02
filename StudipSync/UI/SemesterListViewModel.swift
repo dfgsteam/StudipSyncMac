@@ -22,11 +22,11 @@ final class SemesterListViewModel {
         Task {
             do {
                 let result = try await repository.loadSemestersStaleWhileRevalidate { [weak self] refreshed in
-                    self?.semesters = refreshed
+                    self?.semesters = SemesterListViewModel.sortedForDisplay(refreshed)
                     self?.statusMessage = "Remote aktualisiert"
                 }
 
-                semesters = result.semesters
+                semesters = SemesterListViewModel.sortedForDisplay(result.semesters)
                 statusMessage = result.source == .cache ? "Aus Cache geladen" : "Remote geladen"
                 isLoading = false
             } catch let apiError as StudIPAPIClient.APIClientError {
@@ -36,6 +36,19 @@ final class SemesterListViewModel {
                 statusMessage = "Fehler beim Abruf: \(error.localizedDescription)"
                 isLoading = false
             }
+        }
+    }
+
+    private static func sortedForDisplay(_ semesters: [SemesterDTO]) -> [SemesterDTO] {
+        semesters.sorted { lhs, rhs in
+            let lhsStart = lhs.begin ?? lhs.startOfLectures ?? .distantPast
+            let rhsStart = rhs.begin ?? rhs.startOfLectures ?? .distantPast
+
+            if lhsStart != rhsStart {
+                return lhsStart > rhsStart
+            }
+
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 }

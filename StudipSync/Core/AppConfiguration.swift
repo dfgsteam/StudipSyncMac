@@ -7,7 +7,7 @@ struct AppConfiguration: Codable, Equatable {
     var activeSemesterIDs: Set<String>
 
     static let `default` = AppConfiguration(
-        baseURL: URL(string: "https://studip.example.edu")!,
+        baseURL: URL(string: "https://studip.uni-goettingen.de")!,
         syncIntervalMinutes: 10,
         rootFolderBookmark: nil,
         activeSemesterIDs: []
