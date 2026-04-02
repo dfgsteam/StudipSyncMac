@@ -11,7 +11,8 @@ struct StudipSyncApp: App {
                 statusController: container.statusController,
                 syncScheduler: container.syncScheduler,
                 semesterSelectionStore: container.semesterSelectionStore,
-                repository: container.resourceRepository
+                repository: container.resourceRepository,
+                debugWindowState: container.debugWindowState
             )
             .onAppear {
                 container.syncScheduler.start(intervalMinutes: container.settingsStore.configuration.syncIntervalMinutes)
@@ -29,6 +30,13 @@ struct StudipSyncApp: App {
             MenuBarRootView(
                 statusController: container.statusController,
                 syncScheduler: container.syncScheduler
+            )
+        }
+
+        WindowGroup(id: "debugWindow") {
+            DebugWindowView(
+                repository: container.resourceRepository,
+                state: container.debugWindowState
             )
         }
 

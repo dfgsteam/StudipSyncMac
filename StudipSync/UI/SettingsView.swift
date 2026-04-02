@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var usernameText: String = ""
     @State private var passwordText: String = ""
     @State private var message: String = ""
+    @State private var semesterMinFilterDate: Date = Calendar.current.date(from: DateComponents(year: 2022, month: 4, day: 1)) ?? Date()
+    @State private var semesterMaxFilterDate: Date = Date()
 
     var body: some View {
         Form {
@@ -54,6 +56,60 @@ struct SettingsView: View {
                 )
             }
 
+            Section("Semester") {
+                Toggle("Nur Semester ab Datum laden", isOn: Binding(
+                    get: { settingsStore.configuration.semesterSearchStartDate != nil },
+                    set: { isEnabled in
+                        if isEnabled {
+                            let effectiveDate = settingsStore.configuration.semesterSearchStartDate ?? semesterMinFilterDate
+                            settingsStore.updateSemesterSearchStartDate(effectiveDate)
+                        } else {
+                            settingsStore.updateSemesterSearchStartDate(nil)
+                        }
+                    }
+                ))
+
+                if settingsStore.configuration.semesterSearchStartDate != nil {
+                    DatePicker(
+                        "Startdatum",
+                        selection: Binding(
+                            get: { settingsStore.configuration.semesterSearchStartDate ?? semesterMinFilterDate },
+                            set: { newDate in
+                                semesterMinFilterDate = newDate
+                                settingsStore.updateSemesterSearchStartDate(newDate)
+                            }
+                        ),
+                        displayedComponents: [.date]
+                    )
+                }
+
+                Toggle("Nur Semester bis Datum laden", isOn: Binding(
+                    get: { settingsStore.configuration.semesterSearchEndDate != nil },
+                    set: { isEnabled in
+                        if isEnabled {
+                            let effectiveDate = settingsStore.configuration.semesterSearchEndDate ?? semesterMaxFilterDate
+                            settingsStore.updateSemesterSearchEndDate(effectiveDate)
+                        } else {
+                            settingsStore.updateSemesterSearchEndDate(nil)
+                        }
+                    }
+                ))
+
+                if settingsStore.configuration.semesterSearchEndDate != nil {
+                    DatePicker(
+                        "Enddatum",
+                        selection: Binding(
+                            get: { settingsStore.configuration.semesterSearchEndDate ?? semesterMaxFilterDate },
+                            set: { newDate in
+                                semesterMaxFilterDate = newDate
+                                settingsStore.updateSemesterSearchEndDate(newDate)
+                            }
+                        ),
+                        displayedComponents: [.date]
+                    )
+                }
+            }
+
             if !message.isEmpty {
                 Text(message)
                     .font(.footnote)
@@ -64,6 +120,12 @@ struct SettingsView: View {
         .padding()
         .onAppear {
             baseURLText = settingsStore.configuration.baseURL.absoluteString
+            if let configuredDate = settingsStore.configuration.semesterSearchStartDate {
+                semesterMinFilterDate = configuredDate
+            }
+            if let configuredDate = settingsStore.configuration.semesterSearchEndDate {
+                semesterMaxFilterDate = configuredDate
+            }
             loadCredentials()
         }
     }

@@ -40,6 +40,24 @@ final class SettingsStore {
         persist()
     }
 
+    func updateSemesterSearchStartDate(_ date: Date?) {
+        if let date {
+            configuration.semesterSearchStartDate = Calendar.current.startOfDay(for: date)
+        } else {
+            configuration.semesterSearchStartDate = nil
+        }
+        persist()
+    }
+
+    func updateSemesterSearchEndDate(_ date: Date?) {
+        if let date {
+            configuration.semesterSearchEndDate = Calendar.current.startOfDay(for: date)
+        } else {
+            configuration.semesterSearchEndDate = nil
+        }
+        persist()
+    }
+
     private func persist() {
         do {
             let data = try JSONEncoder().encode(configuration)

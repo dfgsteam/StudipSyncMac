@@ -11,6 +11,7 @@ final class AppContainer {
     let apiClient: StudIPAPIClient
     let resourceRepository: StudIPResourceRepository
     let metadataCache: MetadataCache
+    let debugWindowState: DebugWindowState
 
     init() {
         let settingsStore = SettingsStore()
@@ -32,5 +33,6 @@ final class AppContainer {
             metadataCache: metadataCache
         )
         self.metadataCache = metadataCache
+        self.debugWindowState = DebugWindowState()
     }
 }

@@ -1,6 +1,14 @@
 import Foundation
 
 actor StudIPResourceRepository {
+    enum CourseRawSection: String {
+        case files
+        case chat
+        case wiki
+        case participants
+        case forum
+    }
+
     private let defaultSemesterOffset = 0
     private let defaultSemesterLimit = 100
     private let defaultCourseOffset = 0
@@ -36,10 +44,66 @@ actor StudIPResourceRepository {
         let source: SemesterDataSource
     }
 
+    struct CourseParticipant: Identifiable, Hashable {
+        let id: String
+        let userID: String
+        let displayName: String
+        let email: String?
+        let permission: String?
+        let position: Int?
+        let group: Int?
+        let label: String?
+        let mkdate: String?
+    }
+
+    struct CourseFileRef: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let description: String?
+        let ownerName: String?
+        let mimeType: String?
+        let downloads: Int?
+        let fileSize: Int?
+        let createdAt: Date?
+        let changedAt: Date?
+        let isReadable: Bool?
+        let isDownloadable: Bool?
+        let downloadURL: URL?
+    }
+
+    struct CourseChatThread: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let previewText: String?
+        let contextType: String?
+        let latestActivity: Date?
+        let visitedAt: Date?
+        let createdAt: Date?
+        let changedAt: Date?
+        let isCommentable: Bool?
+        let isReadable: Bool?
+        let isWritable: Bool?
+        let isFollowed: Bool?
+        let unseenComments: Int?
+        let authorID: String?
+        let avatarURL: URL?
+    }
+
+    struct CourseWikiPage: Identifiable, Hashable {
+        let id: String
+        let keyword: String
+        let content: String?
+        let changedAt: Date?
+        let version: Int?
+        let authorID: String?
+        let authorName: String?
+    }
+
     private let apiClient: StudIPAPIClient
     private let settingsStore: SettingsStore
     private let metadataCache: MetadataCache
     private var cachedCurrentUserID: String?
+    private var cachedUsersByID: [String: UserDTO] = [:]
 
     init(apiClient: StudIPAPIClient, settingsStore: SettingsStore, metadataCache: MetadataCache) {
         self.apiClient = apiClient
@@ -48,29 +112,60 @@ actor StudIPResourceRepository {
     }
 
     func loadSemestersStaleWhileRevalidate(onRefresh: (@MainActor ([SemesterDTO]) -> Void)? = nil) async throws -> SemesterLoadResult {
-        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        let (baseURL, semesterStartDateFilter, semesterEndDateFilter) = await MainActor.run {
+            (
+                settingsStore.configuration.baseURL,
+                settingsStore.configuration.semesterSearchStartDate,
+                settingsStore.configuration.semesterSearchEndDate
+            )
+        }
 
         if let cached = try await metadataCache.load(baseURL: baseURL), !cached.semesters.isEmpty {
             if hasLikelyPlaceholderSemesterTitles(cached.semesters) {
                 do {
                     let remoteSemesters = try await fetchRemoteSemesters()
                     try await metadataCache.save(semesters: remoteSemesters, baseURL: baseURL)
-                    return SemesterLoadResult(semesters: remoteSemesters, source: .remote)
+                    let filteredRemote = filterSemesters(
+                        remoteSemesters,
+                        startDate: semesterStartDateFilter,
+                        endDate: semesterEndDateFilter
+                    )
+                    return SemesterLoadResult(semesters: filteredRemote, source: .remote)
                 } catch {
                     AppLogger.error("Placeholder cache refresh failed, using cache: \(error.localizedDescription)")
-                    return SemesterLoadResult(semesters: cached.semesters, source: .cache)
+                    let filteredCache = filterSemesters(
+                        cached.semesters,
+                        startDate: semesterStartDateFilter,
+                        endDate: semesterEndDateFilter
+                    )
+                    return SemesterLoadResult(semesters: filteredCache, source: .cache)
                 }
             } else {
                 Task {
-                    await refreshSemesters(baseURL: baseURL, onRefresh: onRefresh)
+                    await refreshSemesters(
+                        baseURL: baseURL,
+                        semesterStartDateFilter: semesterStartDateFilter,
+                        semesterEndDateFilter: semesterEndDateFilter,
+                        onRefresh: onRefresh
+                    )
                 }
-                return SemesterLoadResult(semesters: cached.semesters, source: .cache)
+                let filteredCache = filterSemesters(
+                    cached.semesters,
+                    startDate: semesterStartDateFilter,
+                    endDate: semesterEndDateFilter
+                )
+                return SemesterLoadResult(semesters: filteredCache, source: .cache)
             }
         }
 
         let remoteSemesters = try await fetchRemoteSemesters()
         try await metadataCache.save(semesters: remoteSemesters, baseURL: baseURL)
-        return SemesterLoadResult(semesters: remoteSemesters, source: .remote)
+        let filteredRemote = filterSemesters(
+            remoteSemesters,
+            startDate: semesterStartDateFilter,
+            endDate: semesterEndDateFilter
+        )
+        return SemesterLoadResult(semesters: filteredRemote, source: .remote)
     }
 
     func fetchSemesters(offset: Int? = nil, limit: Int? = nil) async throws -> [SemesterDTO] {
@@ -114,6 +209,214 @@ actor StudIPResourceRepository {
         try await fetchOne(StudIPQuery<CourseResource>().byID(canonicalStudIPID(id)))
     }
 
+    func fetchRawCourseSectionResponse(courseID: String, section: CourseRawSection) async throws -> String {
+        let path = courseSectionPath(courseID: courseID, section: section)
+        let data = try await apiClient.performRequest(path: path)
+        if let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+        return "<nicht-UTF8 payload, \(data.count) bytes>"
+    }
+
+    func fetchCourseFiles(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseFileRef] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let data = try await apiClient.performRequest(
+            path: "/v1/courses/\(escapedID)/file-refs",
+            queryItems: [
+                URLQueryItem(name: "page[offset]", value: String(offset)),
+                URLQueryItem(name: "page[limit]", value: String(limit))
+            ]
+        )
+
+        let fileRefs: [CourseFileRefDTO] = try await parseCollection(
+            from: data,
+            fallbackCollectionKeys: ["data", "file-refs", "files", "collection", "items"]
+        )
+
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        let mapped = fileRefs.map { fileRef in
+            CourseFileRef(
+                id: fileRef.id,
+                name: fileRef.name ?? "Datei \(fileRef.id)",
+                description: fileRef.description,
+                ownerName: fileRef.ownerName,
+                mimeType: fileRef.mimeType,
+                downloads: fileRef.downloads,
+                fileSize: fileRef.fileSize,
+                createdAt: parseAPIDate(fileRef.mkdate),
+                changedAt: parseAPIDate(fileRef.chdate),
+                isReadable: fileRef.isReadable,
+                isDownloadable: fileRef.isDownloadable,
+                downloadURL: resolveRelativeURL(fileRef.downloadURLPath, baseURL: baseURL)
+            )
+        }
+
+        return mapped.sorted { lhs, rhs in
+            let lhsDate = lhs.changedAt ?? lhs.createdAt ?? .distantPast
+            let rhsDate = rhs.changedAt ?? rhs.createdAt ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    func fetchCourseChatThreads(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseChatThread] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let data = try await apiClient.performRequest(
+            path: "/v1/courses/\(escapedID)/blubber-threads",
+            queryItems: [
+                URLQueryItem(name: "page[offset]", value: String(offset)),
+                URLQueryItem(name: "page[limit]", value: String(limit))
+            ]
+        )
+
+        let threads: [CourseChatThreadDTO] = try await parseCollection(
+            from: data,
+            fallbackCollectionKeys: ["data", "blubber-threads", "threads", "collection", "items"]
+        )
+
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        let mapped = threads.map { thread in
+            CourseChatThread(
+                id: thread.id,
+                name: thread.name ?? "Thread \(thread.id)",
+                previewText: thread.content ?? thread.contextInfoHTML,
+                contextType: thread.contextType,
+                latestActivity: parseAPIDate(thread.latestActivity),
+                visitedAt: parseAPIDate(thread.visitedAt),
+                createdAt: parseAPIDate(thread.mkdate),
+                changedAt: parseAPIDate(thread.chdate),
+                isCommentable: thread.isCommentable,
+                isReadable: thread.isReadable,
+                isWritable: thread.isWritable,
+                isFollowed: thread.isFollowed,
+                unseenComments: thread.unseenComments,
+                authorID: thread.authorID,
+                avatarURL: resolveRelativeURL(thread.avatarURLPath, baseURL: baseURL)
+            )
+        }
+
+        return mapped.sorted { lhs, rhs in
+            let lhsDate = lhs.latestActivity ?? lhs.changedAt ?? lhs.createdAt ?? .distantPast
+            let rhsDate = rhs.latestActivity ?? rhs.changedAt ?? rhs.createdAt ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    func fetchCourseWikiPages(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseWikiPage] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let data = try await apiClient.performRequest(
+            path: "/v1/courses/\(escapedID)/wiki-pages",
+            queryItems: [
+                URLQueryItem(name: "page[offset]", value: String(offset)),
+                URLQueryItem(name: "page[limit]", value: String(limit))
+            ]
+        )
+
+        let pages: [CourseWikiPageDTO] = try await parseCollection(
+            from: data,
+            fallbackCollectionKeys: ["data", "wiki-pages", "pages", "collection", "items"]
+        )
+
+        let uniqueAuthorIDs = Array(Set(pages.compactMap(\.authorID)))
+        var authorsByID: [String: UserDTO] = [:]
+        authorsByID.reserveCapacity(uniqueAuthorIDs.count)
+        for authorID in uniqueAuthorIDs {
+            do {
+                authorsByID[authorID] = try await fetchUserProfile(id: authorID)
+            } catch {
+                AppLogger.error("Failed to load wiki author profile \(authorID): \(error.localizedDescription)")
+            }
+        }
+
+        let mapped = pages.map { page in
+            CourseWikiPage(
+                id: page.id,
+                keyword: page.keyword ?? "Wiki \(page.id)",
+                content: page.content,
+                changedAt: parseAPIDate(page.chdate),
+                version: page.version,
+                authorID: page.authorID,
+                authorName: page.authorID.flatMap { authorsByID[$0]?.preferredDisplayName }
+            )
+        }
+
+        return mapped.sorted { lhs, rhs in
+            let lhsDate = lhs.changedAt ?? .distantPast
+            let rhsDate = rhs.changedAt ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            return lhs.keyword.localizedCaseInsensitiveCompare(rhs.keyword) == .orderedAscending
+        }
+    }
+
+    func fetchCourseParticipants(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseParticipant] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let data = try await apiClient.performRequest(
+            path: "/v1/courses/\(escapedID)/memberships",
+            queryItems: [
+                URLQueryItem(name: "page[offset]", value: String(offset)),
+                URLQueryItem(name: "page[limit]", value: String(limit))
+            ]
+        )
+
+        let memberships: [CourseMembershipDTO] = try await parseCollection(
+            from: data,
+            fallbackCollectionKeys: ["data", "memberships", "course-memberships", "collection", "items"]
+        )
+
+        let uniqueUserIDs = Array(Set(memberships.map(\.userID)))
+        var usersByID: [String: UserDTO] = [:]
+        usersByID.reserveCapacity(uniqueUserIDs.count)
+        for userID in uniqueUserIDs {
+            do {
+                usersByID[userID] = try await fetchUserProfile(id: userID)
+            } catch {
+                AppLogger.error("Failed to load user profile \(userID): \(error.localizedDescription)")
+            }
+        }
+
+        var participants: [CourseParticipant] = []
+        participants.reserveCapacity(memberships.count)
+
+        for membership in memberships {
+            let user = usersByID[membership.userID]
+            let displayName = user?.preferredDisplayName ?? "User \(membership.userID)"
+
+            participants.append(
+                CourseParticipant(
+                    id: membership.id,
+                    userID: membership.userID,
+                    displayName: displayName,
+                    email: user?.email,
+                    permission: membership.permission,
+                    position: membership.position,
+                    group: membership.group,
+                    label: membership.label,
+                    mkdate: membership.mkdate
+                )
+            )
+        }
+
+        return participants.sorted { lhs, rhs in
+            let lhsPosition = lhs.position ?? Int.max
+            let rhsPosition = rhs.position ?? Int.max
+            if lhsPosition != rhsPosition {
+                return lhsPosition < rhsPosition
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
     func debugCurlCommands(for semesterID: String?, courseID: String?) async throws -> [String] {
         let context = debugQueryContext(semesterID: semesterID, courseID: courseID)
         let query: (path: String, queryItems: [URLQueryItem])
@@ -141,12 +444,22 @@ actor StudIPResourceRepository {
         return [command]
     }
 
-    private func refreshSemesters(baseURL: URL, onRefresh: (@MainActor ([SemesterDTO]) -> Void)?) async {
+    private func refreshSemesters(
+        baseURL: URL,
+        semesterStartDateFilter: Date?,
+        semesterEndDateFilter: Date?,
+        onRefresh: (@MainActor ([SemesterDTO]) -> Void)?
+    ) async {
         do {
             let remoteSemesters = try await fetchRemoteSemesters()
             try await metadataCache.save(semesters: remoteSemesters, baseURL: baseURL)
             if let onRefresh {
-                await onRefresh(remoteSemesters)
+                let filteredRemote = filterSemesters(
+                    remoteSemesters,
+                    startDate: semesterStartDateFilter,
+                    endDate: semesterEndDateFilter
+                )
+                await onRefresh(filteredRemote)
             }
         } catch {
             AppLogger.error("Semester refresh failed: \(error.localizedDescription)")
@@ -175,15 +488,86 @@ actor StudIPResourceRepository {
         }
     }
 
+    private func filterSemesters(_ semesters: [SemesterDTO], startDate: Date?, endDate: Date?) -> [SemesterDTO] {
+        let calendar = Calendar.current
+        let minDate = startDate.map { calendar.startOfDay(for: $0) }
+        let maxExclusive = endDate
+            .map { calendar.startOfDay(for: $0) }
+            .flatMap { calendar.date(byAdding: .day, value: 1, to: $0) }
+
+        return semesters.filter { semester in
+            guard let semesterStartDate = semester.begin ?? semester.startOfLectures ?? semester.end else {
+                return true
+            }
+
+            if let minDate, semesterStartDate < minDate {
+                return false
+            }
+            if let maxExclusive, semesterStartDate >= maxExclusive {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func parseAPIDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let seconds = TimeInterval(trimmed) {
+            return Date(timeIntervalSince1970: seconds)
+        }
+        if let date = Self.apiISO8601WithFractionalSeconds.date(from: trimmed) ?? Self.apiISO8601.date(from: trimmed) {
+            return date
+        }
+        return nil
+    }
+
+    private func resolveRelativeURL(_ raw: String?, baseURL: URL) -> URL? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let absolute = URL(string: trimmed), absolute.scheme != nil {
+            return absolute
+        }
+
+        return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
+    }
+
+    private nonisolated static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private nonisolated static let apiISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     private func ensureCurrentUserID() async throws -> String {
         if let cachedCurrentUserID, !cachedCurrentUserID.isEmpty {
             return cachedCurrentUserID
         }
 
-        let me = try await fetchOne(StudIPQuery<UserResource>().byID("me"))
+        let me = try await fetchUserProfile(id: "me")
         let id = canonicalStudIPID(me.id)
         cachedCurrentUserID = id
         return id
+    }
+
+    private func fetchUserProfile(id: String) async throws -> UserDTO {
+        let normalizedID = canonicalStudIPID(id)
+        if let cached = cachedUsersByID[normalizedID] {
+            return cached
+        }
+
+        let user = try await fetchOne(StudIPQuery<UserResource>().byID(normalizedID))
+        cachedUsersByID[normalizedID] = user
+        return user
     }
 
     private func fetchUserCourses(userID: String, queryItems: [URLQueryItem]) async throws -> [CourseDTO] {
@@ -194,6 +578,24 @@ actor StudIPResourceRepository {
     private func userCoursesPath(for userID: String) -> String {
         let escapedID = canonicalStudIPID(userID).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userID
         return "/v1/users/\(escapedID)/courses"
+    }
+
+    private func courseSectionPath(courseID: String, section: CourseRawSection) -> String {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+
+        switch section {
+        case .files:
+            return "/v1/courses/\(escapedID)/file-refs"
+        case .chat:
+            return "/v1/courses/\(escapedID)/blubber-threads"
+        case .wiki:
+            return "/v1/courses/\(escapedID)/wiki-pages"
+        case .participants:
+            return "/v1/courses/\(escapedID)/memberships"
+        case .forum:
+            return "/v1/courses/\(escapedID)/forum-categories"
+        }
     }
 
     private func fetchCollection<Resource: StudIPResourceDescriptor>(_ query: StudIPQuery<Resource>) async throws -> [Resource.Model] {
@@ -539,6 +941,16 @@ struct SemesterDTO: Codable, Hashable, Identifiable {
 struct CourseDTO: Decodable, Hashable, Identifiable {
     let id: String
     let title: String
+    let subtitle: String?
+    let courseNumber: String?
+    let courseType: Int?
+    let courseTypeID: String?
+    let description: String?
+    let location: String?
+    let miscellaneous: String?
+    let instituteID: String?
+    let semClassID: String?
+    let semTypeID: String?
     let semesterID: String?
     let startSemesterRef: String?
     let endSemesterRef: String?
@@ -546,6 +958,12 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case title
+        case subtitle
+        case courseNumber = "course-number"
+        case courseType = "course-type"
+        case description
+        case location
+        case miscellaneous
         case attributes
         case links
         case name
@@ -559,6 +977,12 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
     enum AttributesCodingKeys: String, CodingKey {
         case title
         case name
+        case subtitle
+        case courseNumber = "course-number"
+        case courseType = "course-type"
+        case description
+        case location
+        case miscellaneous
         case courseID = "course_id"
         case semesterID = "semester_id"
         case startSemester = "start_semester"
@@ -567,8 +991,11 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
 
     enum RelationshipsCodingKeys: String, CodingKey {
         case semester
+        case institute
         case startSemester = "start-semester"
         case endSemester = "end-semester"
+        case semClass = "sem-class"
+        case semType = "sem-type"
     }
 
     enum LinksCodingKeys: String, CodingKey {
@@ -597,10 +1024,22 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
             title = attributes.decodeNonEmptyString(forKey: .title)
                 ?? attributes.decodeNonEmptyString(forKey: .name)
                 ?? "Course \(id)"
+            subtitle = attributes.decodeNonEmptyString(forKey: .subtitle)
+            courseNumber = attributes.decodeNonEmptyString(forKey: .courseNumber)
+            courseType = attributes.decodeIntLossy(forKey: .courseType)
+            description = attributes.decodeNonEmptyString(forKey: .description)
+            location = attributes.decodeNonEmptyString(forKey: .location)
+            miscellaneous = attributes.decodeNonEmptyString(forKey: .miscellaneous)
         } else {
             title = container.decodeNonEmptyString(forKey: .title)
                 ?? container.decodeNonEmptyString(forKey: .name)
                 ?? "Course \(id)"
+            subtitle = container.decodeNonEmptyString(forKey: .subtitle)
+            courseNumber = container.decodeNonEmptyString(forKey: .courseNumber)
+            courseType = container.decodeIntLossy(forKey: .courseType)
+            description = container.decodeNonEmptyString(forKey: .description)
+            location = container.decodeNonEmptyString(forKey: .location)
+            miscellaneous = container.decodeNonEmptyString(forKey: .miscellaneous)
         }
 
         let topSemester = container.decodeStringLossy(forKey: .semesterID)
@@ -614,12 +1053,19 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
 
         let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
         let relSemester = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .semester)?.data?.id
+        let relInstitute = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .institute)?.data?.id
         let relStart = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .startSemester)?.data?.id
         let relEnd = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .endSemester)?.data?.id
+        let relSemClass = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .semClass)?.data?.id
+        let relSemType = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .semType)?.data?.id
 
         semesterID = (topSemester ?? attrSemester ?? relSemester).map(canonicalStudIPID)
         startSemesterRef = (topStart ?? attrStart ?? relStart).map(canonicalStudIPID)
         endSemesterRef = (topEnd ?? attrEnd ?? relEnd).map(canonicalStudIPID)
+        instituteID = relInstitute.map(canonicalStudIPID)
+        semClassID = relSemClass.map(canonicalStudIPID)
+        semTypeID = relSemType.map(canonicalStudIPID)
+        courseTypeID = semTypeID ?? semClassID
     }
 
     nonisolated func matches(semesterID: String) -> Bool {
@@ -636,12 +1082,379 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
     }
 }
 
+struct CourseChatThreadDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String?
+    let contextType: String?
+    let contextInfoHTML: String?
+    let content: String?
+    let isCommentable: Bool?
+    let isReadable: Bool?
+    let isWritable: Bool?
+    let isFollowed: Bool?
+    let latestActivity: String?
+    let visitedAt: String?
+    let mkdate: String?
+    let chdate: String?
+    let authorID: String?
+    let unseenComments: Int?
+    let avatarURLPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case attributes
+        case relationships
+        case meta
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case name
+        case contextType = "context-type"
+        case contextInfoHTML = "context-info"
+        case content
+        case isCommentable = "is-commentable"
+        case isReadable = "is-readable"
+        case isWritable = "is-writable"
+        case isFollowed = "is-followed"
+        case latestActivity = "latest-activity"
+        case visitedAt = "visited-at"
+        case mkdate
+        case chdate
+    }
+
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case author
+        case comments
+    }
+
+    enum CommentsCodingKeys: String, CodingKey {
+        case links
+    }
+
+    enum CommentsLinksCodingKeys: String, CodingKey {
+        case related
+    }
+
+    enum RelatedCodingKeys: String, CodingKey {
+        case meta
+    }
+
+    enum RelatedMetaCodingKeys: String, CodingKey {
+        case unseenComments = "unseen-comments"
+    }
+
+    enum MetaCodingKeys: String, CodingKey {
+        case avatar
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
+        let topMeta = try? container.nestedContainer(keyedBy: MetaCodingKeys.self, forKey: .meta)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id) ?? idFromLinks
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing blubber-thread id")
+            )
+        }
+        id = canonicalStudIPID(decodedID)
+
+        name = attributes?.decodeNonEmptyString(forKey: .name)
+        contextType = attributes?.decodeNonEmptyString(forKey: .contextType)
+        contextInfoHTML = attributes?.decodeNonEmptyString(forKey: .contextInfoHTML)
+        content = attributes?.decodeNonEmptyString(forKey: .content)
+        isCommentable = attributes?.decodeBoolLossy(forKey: .isCommentable)
+        isReadable = attributes?.decodeBoolLossy(forKey: .isReadable)
+        isWritable = attributes?.decodeBoolLossy(forKey: .isWritable)
+        isFollowed = attributes?.decodeBoolLossy(forKey: .isFollowed)
+        latestActivity = attributes?.decodeNonEmptyString(forKey: .latestActivity)
+        visitedAt = attributes?.decodeNonEmptyString(forKey: .visitedAt)
+        mkdate = attributes?.decodeNonEmptyString(forKey: .mkdate)
+        chdate = attributes?.decodeNonEmptyString(forKey: .chdate)
+
+        if let relationships {
+            authorID = try relationships
+                .decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .author)?
+                .data?.id
+        } else {
+            authorID = nil
+        }
+
+        if let relationships,
+           let comments = try? relationships.nestedContainer(keyedBy: CommentsCodingKeys.self, forKey: .comments),
+           let commentsLinks = try? comments.nestedContainer(keyedBy: CommentsLinksCodingKeys.self, forKey: .links),
+           let related = try? commentsLinks.nestedContainer(keyedBy: RelatedCodingKeys.self, forKey: .related),
+           let relatedMeta = try? related.nestedContainer(keyedBy: RelatedMetaCodingKeys.self, forKey: .meta) {
+            unseenComments = relatedMeta.decodeIntLossy(forKey: .unseenComments)
+        } else {
+            unseenComments = nil
+        }
+
+        avatarURLPath = topMeta?.decodeNonEmptyString(forKey: .avatar)
+    }
+}
+
+struct CourseWikiPageDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let keyword: String?
+    let content: String?
+    let chdate: String?
+    let version: Int?
+    let authorID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case attributes
+        case relationships
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case keyword
+        case content
+        case chdate
+        case version
+    }
+
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case author
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id) ?? idFromLinks
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing wiki-page id")
+            )
+        }
+        id = canonicalStudIPID(decodedID)
+
+        keyword = attributes?.decodeNonEmptyString(forKey: .keyword)
+        content = attributes?.decodeNonEmptyString(forKey: .content)
+        chdate = attributes?.decodeNonEmptyString(forKey: .chdate)
+        version = attributes?.decodeIntLossy(forKey: .version)
+
+        if let relationships {
+            authorID = try relationships
+                .decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .author)?
+                .data?.id
+        } else {
+            authorID = nil
+        }
+    }
+}
+
+struct CourseFileRefDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String?
+    let description: String?
+    let mkdate: String?
+    let chdate: String?
+    let downloads: Int?
+    let fileSize: Int?
+    let mimeType: String?
+    let isReadable: Bool?
+    let isDownloadable: Bool?
+    let ownerName: String?
+    let downloadURLPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case attributes
+        case relationships
+        case meta
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case name
+        case description
+        case mkdate
+        case chdate
+        case downloads
+        case fileSize = "filesize"
+        case mimeType = "mime-type"
+        case isReadable = "is-readable"
+        case isDownloadable = "is-downloadable"
+    }
+
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case owner
+    }
+
+    enum OwnerCodingKeys: String, CodingKey {
+        case meta
+    }
+
+    enum OwnerMetaCodingKeys: String, CodingKey {
+        case name
+    }
+
+    enum MetaCodingKeys: String, CodingKey {
+        case downloadURL = "download-url"
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
+        let topMeta = try? container.nestedContainer(keyedBy: MetaCodingKeys.self, forKey: .meta)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id) ?? idFromLinks
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing file-ref id")
+            )
+        }
+        id = canonicalStudIPID(decodedID)
+
+        name = attributes?.decodeNonEmptyString(forKey: .name)
+        description = attributes?.decodeNonEmptyString(forKey: .description)
+        mkdate = attributes?.decodeNonEmptyString(forKey: .mkdate)
+        chdate = attributes?.decodeNonEmptyString(forKey: .chdate)
+        downloads = attributes?.decodeIntLossy(forKey: .downloads)
+        fileSize = attributes?.decodeIntLossy(forKey: .fileSize)
+        mimeType = attributes?.decodeNonEmptyString(forKey: .mimeType)
+        isReadable = attributes?.decodeBoolLossy(forKey: .isReadable)
+        isDownloadable = attributes?.decodeBoolLossy(forKey: .isDownloadable)
+
+        if let relationships,
+           let owner = try? relationships.nestedContainer(keyedBy: OwnerCodingKeys.self, forKey: .owner),
+           let ownerMeta = try? owner.nestedContainer(keyedBy: OwnerMetaCodingKeys.self, forKey: .meta) {
+            ownerName = ownerMeta.decodeNonEmptyString(forKey: .name)
+        } else {
+            ownerName = nil
+        }
+
+        downloadURLPath = topMeta?.decodeNonEmptyString(forKey: .downloadURL)
+    }
+}
+
+struct CourseMembershipDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let userID: String
+    let permission: String?
+    let position: Int?
+    let group: Int?
+    let label: String?
+    let mkdate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case membershipID = "membership_id"
+        case userID = "user_id"
+        case attributes
+        case relationships
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case permission
+        case position
+        case group
+        case label
+        case mkdate
+        case userID = "user_id"
+    }
+
+    enum RelationshipsCodingKeys: String, CodingKey {
+        case user
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let relationships = try? container.nestedContainer(keyedBy: RelationshipsCodingKeys.self, forKey: .relationships)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id)
+            ?? container.decodeStringLossy(forKey: .membershipID)
+            ?? idFromLinks
+
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing membership id")
+            )
+        }
+        id = canonicalStudIPID(decodedID)
+
+        let relationshipUserID = try relationships?.decodeIfPresent(JSONAPIRelationshipIdentifier.self, forKey: .user)?.data?.id
+        let decodedUserID = relationshipUserID
+            ?? container.decodeStringLossy(forKey: .userID)
+            ?? attributes?.decodeStringLossy(forKey: .userID)
+
+        guard let decodedUserID, !decodedUserID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing membership user id")
+            )
+        }
+        userID = canonicalStudIPID(decodedUserID)
+
+        permission = attributes?.decodeNonEmptyString(forKey: .permission)
+        position = attributes?.decodeIntLossy(forKey: .position)
+        group = attributes?.decodeIntLossy(forKey: .group)
+        label = attributes?.decodeNonEmptyString(forKey: .label)
+        mkdate = attributes?.decodeNonEmptyString(forKey: .mkdate)
+    }
+}
+
 struct UserDTO: Decodable, Hashable, Identifiable {
     let id: String
+    let username: String?
+    let displayName: String?
+    let fullName: String?
+    let givenName: String?
+    let familyName: String?
+    let email: String?
+    let phone: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case userID = "user_id"
+        case username
+        case name
+        case displayName
+        case displayNameDashed = "display-name"
+        case fullName
+        case formattedName = "formatted-name"
+        case givenName
+        case familyName
+        case givenNameDashed = "given-name"
+        case familyNameDashed = "family-name"
+        case email
+        case mail
+        case phone
+        case telephone
         case attributes
         case links
     }
@@ -649,6 +1462,20 @@ struct UserDTO: Decodable, Hashable, Identifiable {
     enum AttributesCodingKeys: String, CodingKey {
         case id
         case userID = "user_id"
+        case username
+        case name
+        case displayName
+        case displayNameDashed = "display-name"
+        case fullName
+        case formattedName = "formatted-name"
+        case givenName
+        case familyName
+        case givenNameDashed = "given-name"
+        case familyNameDashed = "family-name"
+        case email
+        case mail
+        case phone
+        case telephone
     }
 
     enum LinksCodingKeys: String, CodingKey {
@@ -674,6 +1501,67 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         }
 
         id = canonicalStudIPID(decodedID)
+
+        username = container.decodeNonEmptyString(forKey: .username)
+            ?? attributes?.decodeNonEmptyString(forKey: .username)
+
+        let containerDisplayName = container.decodeNonEmptyString(forKey: .displayName)
+            ?? container.decodeNonEmptyString(forKey: .displayNameDashed)
+            ?? container.decodeNonEmptyString(forKey: .formattedName)
+            ?? container.decodeNonEmptyString(forKey: .name)
+        let attributesDisplayName = attributes?.decodeNonEmptyString(forKey: .displayName)
+            ?? attributes?.decodeNonEmptyString(forKey: .displayNameDashed)
+            ?? attributes?.decodeNonEmptyString(forKey: .formattedName)
+            ?? attributes?.decodeNonEmptyString(forKey: .name)
+        displayName = containerDisplayName ?? attributesDisplayName
+
+        fullName = container.decodeNonEmptyString(forKey: .fullName)
+            ?? container.decodeNonEmptyString(forKey: .name)
+            ?? attributes?.decodeNonEmptyString(forKey: .fullName)
+            ?? attributes?.decodeNonEmptyString(forKey: .name)
+
+        givenName = container.decodeNonEmptyString(forKey: .givenName)
+            ?? container.decodeNonEmptyString(forKey: .givenNameDashed)
+            ?? attributes?.decodeNonEmptyString(forKey: .givenName)
+            ?? attributes?.decodeNonEmptyString(forKey: .givenNameDashed)
+
+        familyName = container.decodeNonEmptyString(forKey: .familyName)
+            ?? container.decodeNonEmptyString(forKey: .familyNameDashed)
+            ?? attributes?.decodeNonEmptyString(forKey: .familyName)
+            ?? attributes?.decodeNonEmptyString(forKey: .familyNameDashed)
+
+        email = container.decodeNonEmptyString(forKey: .email)
+            ?? container.decodeNonEmptyString(forKey: .mail)
+            ?? attributes?.decodeNonEmptyString(forKey: .email)
+            ?? attributes?.decodeNonEmptyString(forKey: .mail)
+
+        phone = container.decodeNonEmptyString(forKey: .phone)
+            ?? container.decodeNonEmptyString(forKey: .telephone)
+            ?? attributes?.decodeNonEmptyString(forKey: .phone)
+            ?? attributes?.decodeNonEmptyString(forKey: .telephone)
+    }
+
+    var preferredDisplayName: String? {
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
+        if let fullName, !fullName.isEmpty {
+            return fullName
+        }
+
+        let composedName = [givenName, familyName]
+            .compactMap { value -> String? in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !composedName.isEmpty {
+            return composedName
+        }
+
+        return username
     }
 }
 
@@ -688,6 +1576,20 @@ private struct JSONAPISingleResponse<Resource: Decodable>: Decodable {
 private struct JSONAPIRelationshipIdentifier: Decodable {
     struct Linkage: Decodable {
         let id: String
+
+        enum CodingKeys: String, CodingKey {
+            case id
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard let decoded = container.decodeStringLossy(forKey: .id) else {
+                throw DecodingError.dataCorrupted(
+                    .init(codingPath: decoder.codingPath, debugDescription: "Missing relationship id")
+                )
+            }
+            id = canonicalStudIPID(decoded)
+        }
     }
 
     let data: Linkage?
@@ -729,6 +1631,19 @@ private extension KeyedDecodingContainer {
             if ["false", "0", "no", "n"].contains(normalized) {
                 return false
             }
+        }
+        return nil
+    }
+
+    func decodeIntLossy(forKey key: Key) -> Int? {
+        if let value = try? decodeIfPresent(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            return Int(value)
+        }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return nil
     }

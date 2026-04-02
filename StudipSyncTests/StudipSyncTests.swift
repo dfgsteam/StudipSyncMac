@@ -27,10 +27,16 @@ struct StudipSyncTests {
         let store = SettingsStore(defaults: defaults)
         store.updateBaseURL(URL(string: "https://example.edu")!)
         store.updateSyncInterval(minutes: 15)
+        let minDateToPersist = Date(timeIntervalSince1970: 1_648_771_200) // 2022-04-01T00:00:00Z
+        let maxDateToPersist = Date(timeIntervalSince1970: 1_704_067_200) // 2024-01-01T00:00:00Z
+        store.updateSemesterSearchStartDate(minDateToPersist)
+        store.updateSemesterSearchEndDate(maxDateToPersist)
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.configuration.baseURL.absoluteString == "https://example.edu")
         #expect(reloaded.configuration.syncIntervalMinutes == 15)
+        #expect(reloaded.configuration.semesterSearchStartDate == Calendar.current.startOfDay(for: minDateToPersist))
+        #expect(reloaded.configuration.semesterSearchEndDate == Calendar.current.startOfDay(for: maxDateToPersist))
     }
 
     @Test
@@ -115,5 +121,66 @@ struct StudipSyncTests {
     func studIPSemesterQueryBuildsDetailPath() {
         let query = StudIPQuery<SemesterResource>().byID("abc123")
         #expect(query.path == "/v1/semesters/abc123")
+    }
+
+    @Test
+    func courseDTODecodesDetailedPayload() throws {
+        let json = """
+        {
+          "data": {
+            "type": "courses",
+            "id": "8c03b7332cccf554d135152ce9f2db25",
+            "attributes": {
+              "course-number": null,
+              "title": "Studieren mit Kind",
+              "subtitle": null,
+              "course-type": 99,
+              "description": "Ein Raum fuer studierende Eltern.",
+              "location": null,
+              "miscellaneous": null
+            },
+            "relationships": {
+              "institute": {
+                "data": {
+                  "type": "institutes",
+                  "id": "03868081c9133f74d1f83ab5271fd3f5"
+                }
+              },
+              "start-semester": {
+                "data": {
+                  "type": "semesters",
+                  "id": "1e9b80f9d228270fc77a0fd31ad057d8"
+                }
+              },
+              "sem-class": {
+                "data": {
+                  "type": "sem-classes",
+                  "id": "99"
+                }
+              },
+              "sem-type": {
+                "data": {
+                  "type": "sem-types",
+                  "id": "99"
+                }
+              }
+            }
+          }
+        }
+        """
+
+        let rawData = Data(json.utf8)
+        let topLevel = try JSONSerialization.jsonObject(with: rawData) as? [String: Any]
+        let courseObject = topLevel?["data"] as? [String: Any]
+        let courseData = try JSONSerialization.data(withJSONObject: courseObject as Any)
+        let course = try JSONDecoder().decode(CourseDTO.self, from: courseData)
+
+        #expect(course.id == "8c03b7332cccf554d135152ce9f2db25")
+        #expect(course.title == "Studieren mit Kind")
+        #expect(course.courseType == 99)
+        #expect(course.instituteID == "03868081c9133f74d1f83ab5271fd3f5")
+        #expect(course.startSemesterRef == "1e9b80f9d228270fc77a0fd31ad057d8")
+        #expect(course.semClassID == "99")
+        #expect(course.semTypeID == "99")
     }
 }
