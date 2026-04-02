@@ -34,6 +34,7 @@ actor StudIPResourceRepository {
     private let blubberRepository: StudIPBlubberRepository
     private let forumRepository: StudIPForumRepository
     private let userDirectoryRepository: StudIPUserDirectoryRepository
+    private let instituteRepository: StudIPInstituteRepository
 
     init(apiClient: StudIPAPIClient, settingsStore: SettingsStore, metadataCache: MetadataCache) {
         self.apiClient = apiClient
@@ -62,6 +63,7 @@ actor StudIPResourceRepository {
         self.blubberRepository = StudIPBlubberRepository(apiClient: apiClient, responseDecoder: responseDecoder)
         self.forumRepository = StudIPForumRepository(apiClient: apiClient, responseDecoder: responseDecoder)
         self.userDirectoryRepository = StudIPUserDirectoryRepository(apiClient: apiClient, responseDecoder: responseDecoder)
+        self.instituteRepository = StudIPInstituteRepository(apiClient: apiClient, responseDecoder: responseDecoder)
     }
 
     func files() -> StudIPFileRepository { fileRepository }
@@ -70,6 +72,7 @@ actor StudIPResourceRepository {
     func blubber() -> StudIPBlubberRepository { blubberRepository }
     func forum() -> StudIPForumRepository { forumRepository }
     func users() -> StudIPUserDirectoryRepository { userDirectoryRepository }
+    func institutes() -> StudIPInstituteRepository { instituteRepository }
     func coursesAPI() -> StudIPCourseRepository { courseRepository }
 
     func loadSemestersStaleWhileRevalidate(onRefresh: (@MainActor ([SemesterDTO]) -> Void)? = nil) async throws -> SemesterLoadResult {
@@ -172,7 +175,7 @@ actor StudIPResourceRepository {
     }
 
     func fetchUsersByIDs(_ userIDs: [String]) async -> [String: UserDTO] {
-        let normalizedIDs = Array<Any>(
+        let normalizedIDs: [String] = Array(
             Set(
                 userIDs.compactMap { rawID in
                     let trimmed = rawID.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -21,12 +21,14 @@ actor StudIPCourseRepository {
     func fetchCoursesCollection(
         semesterID: String? = nil,
         userID: String? = nil,
+        search: String? = nil,
         offset: Int? = nil,
         limit: Int? = nil
     ) async throws -> [CourseDTO] {
         let query = StudIPQuery<CourseResource>()
             .whereFilter("semester", equals: semesterID.map(canonicalStudIPID))
             .whereFilter("user", equals: userID.map(canonicalStudIPID))
+            .whereFilter("search", equals: search?.trimmingCharacters(in: .whitespacesAndNewlines))
             .paginate(offset: offset ?? defaultCourseOffset, limit: limit ?? defaultCourseLimit)
 
         let data = try await apiClient.performRequest(path: query.path, queryItems: query.queryItems)
@@ -67,6 +69,34 @@ actor StudIPCourseRepository {
 
     func fetchCourse(id: String) async throws -> CourseDTO {
         try await fetchOne(StudIPQuery<CourseResource>().byID(canonicalStudIPID(id)))
+    }
+
+    func enrollCurrentUser(courseID: String) async throws {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedCourseID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let userID = try await userRepository.ensureCurrentUserID()
+
+        let userLinkage = JSONAPIToManyRelationshipWriteDTO(
+            data: [JSONAPIResourceIdentifierDTO(type: "users", id: userID)]
+        )
+        do {
+            _ = try await apiClient.performRequest(
+                path: "/v1/courses/\(escapedCourseID)/relationships/memberships",
+                method: .post,
+                body: userLinkage
+            )
+            return
+        } catch {
+            let membershipID = "\(normalizedCourseID)_\(canonicalStudIPID(userID))"
+            let membershipLinkage = JSONAPIToManyRelationshipWriteDTO(
+                data: [JSONAPIResourceIdentifierDTO(type: "course-memberships", id: membershipID)]
+            )
+            _ = try await apiClient.performRequest(
+                path: "/v1/courses/\(escapedCourseID)/relationships/memberships",
+                method: .post,
+                body: membershipLinkage
+            )
+        }
     }
 
     func debugUserCoursesQuery(for semesterID: String, offset: Int? = nil, limit: Int? = nil) async throws -> (path: String, queryItems: [URLQueryItem]) {

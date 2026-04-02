@@ -24,6 +24,17 @@ actor StudIPUserDirectoryRepository {
         return try responseDecoder.parseEntity(from: data, fallbackObjectKeys: ["data", "users", "item"])
     }
 
+    func fetchMeRawJSON() async throws -> String {
+        let data = try await apiClient.performRequest(path: "/v1/users/me")
+        let rawObject = try JSONSerialization.jsonObject(with: data)
+        guard JSONSerialization.isValidJSONObject(rawObject),
+              let prettyData = try? JSONSerialization.data(withJSONObject: rawObject, options: [.prettyPrinted, .sortedKeys]),
+              let prettyString = String(data: prettyData, encoding: .utf8) else {
+            return String(data: data, encoding: .utf8) ?? "<nicht-UTF8 payload, \(data.count) bytes>"
+        }
+        return prettyString
+    }
+
     func fetchUser(id: String) async throws -> UserDTO {
         let escapedID = StudIPRepositoryUtilities.escapedPathID(id)
         let data = try await apiClient.performRequest(path: "/v1/users/\(escapedID)")

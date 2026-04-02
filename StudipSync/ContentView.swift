@@ -3,9 +3,11 @@ import QuickLookUI
 import SwiftUI
 
 struct ContentView: View {
-    private enum SidebarPage: String, CaseIterable, Hashable, Identifiable {
+    enum SidebarPage: String, CaseIterable, Hashable, Identifiable {
         case start
+        case profil
         case benutzer
+        case veranstaltungen
         case einrichtungen
         case platzhalter
 
@@ -14,7 +16,9 @@ struct ContentView: View {
         var title: String {
             switch self {
             case .start: return "Start"
+            case .profil: return "Profil"
             case .benutzer: return "Benutzer"
+            case .veranstaltungen: return "Veranstaltungen"
             case .einrichtungen: return "Einrichtungen"
             case .platzhalter: return "Platzhalter"
             }
@@ -23,14 +27,16 @@ struct ContentView: View {
         var systemImage: String {
             switch self {
             case .start: return "house"
+            case .profil: return "person.crop.circle"
             case .benutzer: return "person.2"
+            case .veranstaltungen: return "book.closed"
             case .einrichtungen: return "building.2"
             case .platzhalter: return "square.dashed"
             }
         }
     }
 
-    private struct CourseDetailSection: Identifiable, Hashable {
+    struct CourseDetailSection: Identifiable, Hashable {
         let id: String
         let title: String
         let systemImage: String
@@ -44,7 +50,7 @@ struct ContentView: View {
         static let forum = CourseDetailSection(id: "forum", title: "Forum", systemImage: "list.bullet.rectangle")
     }
 
-    private struct QuickLookPreviewFile: Identifiable {
+    struct QuickLookPreviewFile: Identifiable {
         let id: String
         let title: String
         let url: URL
@@ -56,76 +62,131 @@ struct ContentView: View {
     let repository: StudIPResourceRepository
     let debugWindowState: DebugWindowState
 
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openWindow) var openWindow
 
-    @State private var semesterViewModel: SemesterListViewModel
-    @State private var selectedSidebarPage: SidebarPage? = .start
-    @State private var selectedSemesterID: String?
-    @State private var selectedCourseID: String?
-    @State private var startScheduleEntries: [ScheduleEntryDTO] = []
-    @State private var startScheduleError: String?
-    @State private var isLoadingStartSchedule = false
-    @State private var startScheduleLoadedDate: Date?
-    @State private var semesterScheduleEventsBySemesterID: [String: [EventDTO]] = [:]
-    @State private var semesterScheduleErrorsBySemesterID: [String: String] = [:]
-    @State private var loadingSemesterScheduleIDs: Set<String> = []
-    @State private var semesterScheduleLoadedAtBySemesterID: [String: Date] = [:]
-    @State private var coursesBySemesterID: [String: [CourseDTO]] = [:]
-    @State private var prefetchingSemesterCourseIDs: Set<String> = []
-    @State private var coursePrefetchErrorsBySemesterID: [String: String] = [:]
-    @State private var courses: [CourseDTO] = []
-    @State private var isLoadingCourses = false
-    @State private var isLoadingCourseDetail = false
-    @State private var courseStatusMessage = "Waehle ein Semester aus"
-    @State private var selectedCourseDetailSectionID = CourseDetailSection.description.id
-    @State private var foldersByContextKey: [String: [FolderDTO]] = [:]
-    @State private var filesByContextKey: [String: [CourseFileRefDTO]] = [:]
-    @State private var fileErrorsByContextKey: [String: String] = [:]
-    @State private var fileFolderPathByCourseID: [String: [FolderDTO]] = [:]
-    @State private var downloadingFileIDs: Set<String> = []
-    @State private var fileDownloadErrorsByFileID: [String: String] = [:]
-    @State private var previewingFileIDs: Set<String> = []
-    @State private var filePreviewErrorsByFileID: [String: String] = [:]
-    @State private var selectedQuickLookFile: QuickLookPreviewFile?
-    @State private var isLoadingFiles = false
-    @State private var chatsByCourseID: [String: [StudIPResourceRepository.CourseChatThread]] = [:]
-    @State private var chatErrorsByCourseID: [String: String] = [:]
-    @State private var isLoadingChats = false
-    @State private var selectedChatThreadIDByCourseID: [String: String] = [:]
-    @State private var chatMessagesByThreadID: [String: [BlubberPostingDTO]] = [:]
-    @State private var chatMessageErrorsByThreadID: [String: String] = [:]
-    @State private var loadingChatThreadIDs: Set<String> = []
-    @State private var wikisByCourseID: [String: [StudIPResourceRepository.CourseWikiPage]] = [:]
-    @State private var wikiErrorsByCourseID: [String: String] = [:]
-    @State private var isLoadingWikis = false
-    @State private var selectedWikiPageIDByCourseID: [String: String] = [:]
-    @State private var participantsByCourseID: [String: [StudIPResourceRepository.CourseParticipant]] = [:]
-    @State private var participantErrorsByCourseID: [String: String] = [:]
-    @State private var isLoadingParticipants = false
-    @State private var courseNewsByCourseID: [String: [NewsDTO]] = [:]
-    @State private var courseNewsErrorsByCourseID: [String: String] = [:]
-    @State private var isLoadingCourseNews = false
-    @State private var selectedNewsIDByCourseID: [String: String] = [:]
-    @State private var newsCommentsByNewsID: [String: [NewsCommentDTO]] = [:]
-    @State private var newsCommentErrorsByNewsID: [String: String] = [:]
-    @State private var loadingNewsCommentIDs: Set<String> = []
-    @State private var forumsByCourseID: [String: [StudIPResourceRepository.CourseForumCategory]] = [:]
-    @State private var forumErrorsByCourseID: [String: String] = [:]
-    @State private var isLoadingForums = false
-    @State private var selectedForumCategoryIDByCourseID: [String: String] = [:]
-    @State private var forumEntriesByCategoryID: [String: [ForumEntryDTO]] = [:]
-    @State private var forumEntryErrorsByCategoryID: [String: String] = [:]
-    @State private var loadingForumCategoryIDs: Set<String> = []
-    @State private var selectedForumEntryIDByCategoryID: [String: String] = [:]
-    @State private var forumRepliesByEntryID: [String: [ForumEntryDTO]] = [:]
-    @State private var forumReplyErrorsByEntryID: [String: String] = [:]
-    @State private var loadingForumEntryIDs: Set<String> = []
-    @State private var userDisplayNameByID: [String: String] = [:]
-    @State private var loadingUserNameIDs: Set<String> = []
-    @State private var prefetchingCourseIDs: Set<String> = []
-    @State private var detailSearchTextBySectionID: [String: String] = [:]
-    @State private var detailSectionLoadedAtByKey: [String: Date] = [:]
-    @State private var selectedParticipantForInfo: StudIPResourceRepository.CourseParticipant?
+    @State var semesterViewModel: SemesterListViewModel
+    @State var selectedSidebarPage: SidebarPage? = .start
+    @State var sidebarSemesterSearchQuery = ""
+    @State var selectedSemesterID: String?
+    @State var selectedCourseID: String?
+    @State var courseListSearchQuery = ""
+    @State var startScheduleEntries: [ScheduleEntryDTO] = []
+    @State var startScheduleError: String?
+    @State var isLoadingStartSchedule = false
+    @State var startScheduleLoadedDate: Date?
+    @State var semesterScheduleEventsBySemesterID: [String: [EventDTO]] = [:]
+    @State var semesterScheduleErrorsBySemesterID: [String: String] = [:]
+    @State var loadingSemesterScheduleIDs: Set<String> = []
+    @State var semesterScheduleLoadedAtBySemesterID: [String: Date] = [:]
+    @State var coursesBySemesterID: [String: [CourseDTO]] = [:]
+    @State var prefetchingSemesterCourseIDs: Set<String> = []
+    @State var coursePrefetchErrorsBySemesterID: [String: String] = [:]
+    @State var courses: [CourseDTO] = []
+    @State var isLoadingCourses = false
+    @State var isLoadingCourseDetail = false
+    @State var courseStatusMessage = "Waehle ein Semester aus"
+    @State var selectedCourseDetailSectionID = CourseDetailSection.description.id
+    @State var foldersByContextKey: [String: [FolderDTO]] = [:]
+    @State var filesByContextKey: [String: [CourseFileRefDTO]] = [:]
+    @State var fileErrorsByContextKey: [String: String] = [:]
+    @State var fileFolderPathByCourseID: [String: [FolderDTO]] = [:]
+    @State var downloadingFileIDs: Set<String> = []
+    @State var fileDownloadErrorsByFileID: [String: String] = [:]
+    @State var previewingFileIDs: Set<String> = []
+    @State var filePreviewErrorsByFileID: [String: String] = [:]
+    @State var selectedQuickLookFile: QuickLookPreviewFile?
+    @State var isLoadingFiles = false
+    @State var chatsByCourseID: [String: [StudIPResourceRepository.CourseChatThread]] = [:]
+    @State var chatErrorsByCourseID: [String: String] = [:]
+    @State var isLoadingChats = false
+    @State var selectedChatThreadIDByCourseID: [String: String] = [:]
+    @State var chatMessagesByThreadID: [String: [BlubberPostingDTO]] = [:]
+    @State var chatMessageErrorsByThreadID: [String: String] = [:]
+    @State var loadingChatThreadIDs: Set<String> = []
+    @State var wikisByCourseID: [String: [StudIPResourceRepository.CourseWikiPage]] = [:]
+    @State var wikiErrorsByCourseID: [String: String] = [:]
+    @State var isLoadingWikis = false
+    @State var selectedWikiPageIDByCourseID: [String: String] = [:]
+    @State var participantsByCourseID: [String: [StudIPResourceRepository.CourseParticipant]] = [:]
+    @State var participantErrorsByCourseID: [String: String] = [:]
+    @State var isLoadingParticipants = false
+    @State var courseNewsByCourseID: [String: [NewsDTO]] = [:]
+    @State var courseNewsErrorsByCourseID: [String: String] = [:]
+    @State var isLoadingCourseNews = false
+    @State var selectedNewsIDByCourseID: [String: String] = [:]
+    @State var newsCommentsByNewsID: [String: [NewsCommentDTO]] = [:]
+    @State var newsCommentErrorsByNewsID: [String: String] = [:]
+    @State var loadingNewsCommentIDs: Set<String> = []
+    @State var forumsByCourseID: [String: [StudIPResourceRepository.CourseForumCategory]] = [:]
+    @State var forumErrorsByCourseID: [String: String] = [:]
+    @State var isLoadingForums = false
+    @State var selectedForumCategoryIDByCourseID: [String: String] = [:]
+    @State var forumEntriesByCategoryID: [String: [ForumEntryDTO]] = [:]
+    @State var forumEntryErrorsByCategoryID: [String: String] = [:]
+    @State var loadingForumCategoryIDs: Set<String> = []
+    @State var selectedForumEntryIDByCategoryID: [String: String] = [:]
+    @State var forumRepliesByEntryID: [String: [ForumEntryDTO]] = [:]
+    @State var forumReplyErrorsByEntryID: [String: String] = [:]
+    @State var loadingForumEntryIDs: Set<String> = []
+    @State var userDisplayNameByID: [String: String] = [:]
+    @State var loadingUserNameIDs: Set<String> = []
+    @State var prefetchingCourseIDs: Set<String> = []
+    @State var detailSearchTextBySectionID: [String: String] = [:]
+    @State var detailSectionLoadedAtByKey: [String: Date] = [:]
+    @AppStorage("remembered_user_ids_csv") var rememberedUserIDsCSV = ""
+    @State var userSearchQuery = ""
+    @State var userSearchResults: [UserDTO] = []
+    @State var isLoadingUserSearch = false
+    @State var userSearchError: String?
+    @State var lastUserSearchDate: Date?
+    @State var selectedUserID: String?
+    @State var userNavigationHistory: [String] = []
+    @State var userNavigationHistoryIndex: Int = -1
+    @State var meUserID: String?
+    @State var userDetailByID: [String: UserDTO] = [:]
+    @State var userDetailErrorByID: [String: String] = [:]
+    @State var loadingUserDetailIDs: Set<String> = []
+    @State var userInstituteMembershipsByID: [String: [InstituteMembershipDTO]] = [:]
+    @State var userNewsByID: [String: [NewsDTO]] = [:]
+    @State var userCoursesByID: [String: [CourseDTO]] = [:]
+    @State var userUpcomingEventsByID: [String: [EventDTO]] = [:]
+    @State var userScheduleByID: [String: [ScheduleEntryDTO]] = [:]
+    @State var userExtrasErrorByID: [String: String] = [:]
+    @State var rememberedUsersByID: [String: UserDTO] = [:]
+    @State var isLoadingRememberedUsers = false
+    @State var institutionSearchQuery = ""
+    @State var institutions: [InstituteDTO] = []
+    @State var isLoadingInstitutions = false
+    @State var institutionsError: String?
+    @State var institutionsLoadedDate: Date?
+    @State var selectedInstituteID: String?
+    @State var selectedInstitutionSemesterID: String?
+    @State var institutionCourseSearchQuery = ""
+    @State var institutionCoursesByKey: [String: [CourseDTO]] = [:]
+    @State var institutionCourseErrorsByKey: [String: String] = [:]
+    @State var loadingInstitutionCourseKeys: Set<String> = []
+    @State var courseCatalogQuery = ""
+    @State var selectedCatalogSemesterID: String?
+    @State var catalogCourses: [CourseDTO] = []
+    @State var isLoadingCatalogCourses = false
+    @State var catalogCoursesLoadedDate: Date?
+    @State var catalogCoursesError: String?
+    @State var selectedCatalogCourseID: String?
+    @State var selectedCatalogCourseDetail: CourseDTO?
+    @State var selectedCatalogCourseDetailError: String?
+    @State var isLoadingCatalogCourseDetail = false
+    @State var enrolledCourseIDs: Set<String> = []
+    @State var isLoadingEnrolledCourses = false
+    @State var enrollmentInFlightCourseIDs: Set<String> = []
+    @State var enrollmentErrorByCourseID: [String: String] = [:]
+    @State var meProfile: UserDTO?
+    @State var meProfileError: String?
+    @State var isLoadingMeProfile = false
+    @State var meProfileLoadedDate: Date?
+    @State var meProfileRawJSON: String?
+    @State var meProfileRawError: String?
+    @State var isLoadingMeProfileRaw = false
+    @State var isShowingMeProfileRawJSON = false
 
     init(
         statusController: MenuBarStatusController,
@@ -147,6 +208,8 @@ struct ContentView: View {
             if selectedSemesterID == nil {
                 NavigationSplitView {
                     pagesSidebar
+                } content: {
+                    contentForSelectedPage
                 } detail: {
                     detailForSelectedPage
                 }
@@ -216,656 +279,12 @@ struct ContentView: View {
         .task(id: semesterScheduleTaskID) {
             await loadSemesterScheduleIfNeeded()
         }
-        .sheet(item: $selectedParticipantForInfo) { participant in
-            participantInfoSheet(for: participant)
-        }
         .sheet(item: $selectedQuickLookFile) { previewFile in
             quickLookSheet(for: previewFile)
         }
     }
 
-    private var selectedPage: SidebarPage {
-        selectedSidebarPage ?? .start
-    }
-
-    private var pagesSidebar: some View {
-        VStack(spacing: 0) {
-            List(SidebarPage.allCases) { page in
-                Button {
-                    selectedSidebarPage = page
-                    selectedSemesterID = nil
-                    selectedCourseID = nil
-                } label: {
-                    Label(page.title, systemImage: page.systemImage)
-                        .font(.body.weight(.medium))
-                        .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
-                }
-                .buttonStyle(.plain)
-            }
-            .listStyle(.sidebar)
-            .frame(minHeight: 180, maxHeight: 220)
-
-            Divider()
-            semesterSidebar
-        }
-    }
-
-    private var contentForSelectedPage: some View {
-        Group {
-            if selectedSemesterID != nil {
-                coursesColumn
-            } else {
-                switch selectedPage {
-                case .start:
-                    startContentColumn
-                case .benutzer:
-                    benutzerContentColumn
-                case .einrichtungen:
-                    einrichtungenContentColumn
-                case .platzhalter:
-                    platzhalterContentColumn
-                }
-            }
-        }
-    }
-
-    private var detailForSelectedPage: some View {
-        Group {
-            if selectedSemesterID != nil {
-                detailColumn
-            } else {
-                switch selectedPage {
-                case .start:
-                    startDetailColumn
-                case .benutzer:
-                    benutzerDetailColumn
-                case .einrichtungen:
-                    einrichtungenDetailColumn
-                case .platzhalter:
-                    platzhalterDetailColumn
-                }
-            }
-        }
-    }
-
-    private var semesterSidebar: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Semester")
-                    .font(.headline)
-                Spacer()
-                Button("Neu laden") {
-                    semesterViewModel.loadSemesters()
-                }
-                .disabled(semesterViewModel.isLoading)
-            }
-
-            List(semesterViewModel.semesters) { semester in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(semester.title)
-                            .font(.body.weight(.medium))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .help("Semester-ID: \(semester.id)")
-                    }
-                    Spacer()
-                    Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
-                }
-                .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedSemesterID = semester.id
-                    selectedCourseID = nil
-                }
-                .contextMenu {
-                    Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {
-                        semesterSelectionStore.setActive(!semesterSelectionStore.isActive(semesterID: semester.id), semesterID: semester.id)
-                    }
-                }
-            }
-
-            Text(semesterViewModel.statusMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(12)
-    }
-
-    private var startContentColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                startStatsGrid
-                startScheduleWidget(limit: 5)
-                startSemesterOverviewWidget
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(12)
-    }
-
-    private var startDetailColumn: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("StudIP Dashboard")
-                        .font(.title2.weight(.bold))
-                    Text(startSubtitleText)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Image(systemName: statusController.syncState.symbolName)
-                    Text(statusController.syncState.statusText)
-                        .lineLimit(1)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .background(.bar)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    startStatsGrid
-                    startScheduleWidget(limit: 8)
-                    startSemesterOverviewWidget
-                    startQuickActionsWidget
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
-            }
-            .background(Color(nsColor: .textBackgroundColor))
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(.bar)
-        }
-    }
-
-    private var benutzerContentColumn: some View {
-        staticMenuContentColumn(
-            title: "Benutzer",
-            subtitle: "Statische Testseite: Inhaltsbereich"
-        )
-    }
-
-    private var benutzerDetailColumn: some View {
-        staticMenuDetailColumn(
-            title: "Benutzer",
-            subtitle: "Statische Testseite: Detailbereich"
-        )
-    }
-
-    private var einrichtungenContentColumn: some View {
-        staticMenuContentColumn(
-            title: "Einrichtungen",
-            subtitle: "Statische Testseite: Inhaltsbereich"
-        )
-    }
-
-    private var einrichtungenDetailColumn: some View {
-        staticMenuDetailColumn(
-            title: "Einrichtungen",
-            subtitle: "Statische Testseite: Detailbereich"
-        )
-    }
-
-    private var platzhalterContentColumn: some View {
-        staticMenuContentColumn(
-            title: "Platzhalter",
-            subtitle: "Diese Seite ist ein Platzhalter vor dem Veranstaltungsbereich."
-        )
-    }
-
-    private var platzhalterDetailColumn: some View {
-        staticMenuDetailColumn(
-            title: "Platzhalter",
-            subtitle: "Statische Testseite: Detailbereich"
-        )
-    }
-
-    private func staticMenuContentColumn(title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-            GroupBox("Testinhalt") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(subtitle)
-                    Text("Diese Seite ist bewusst statisch und dient als Platzhalter.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Spacer()
-        }
-        .padding(12)
-    }
-
-    private func staticMenuDetailColumn(title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.title2.weight(.semibold))
-            Text(subtitle)
-                .foregroundStyle(.secondary)
-            GroupBox("Testdetails") {
-                Text("Statischer Detailbereich fuer UI-Tests.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Spacer()
-            Divider()
-            detailActions
-        }
-        .padding(24)
-    }
-
-    private var startSubtitleText: String {
-        if let current = currentSemesterForDashboard {
-            return "Aktives Semester: \(current.title)"
-        }
-        return "Uebersicht ueber Synchronisation, Semester und Termine"
-    }
-
-    private var currentSemesterForDashboard: SemesterDTO? {
-        semesterViewModel.semesters.first(where: { $0.isCurrent == true }) ?? semesterViewModel.semesters.first
-    }
-
-    private var visibleSemesterCount: Int {
-        semesterViewModel.semesters.filter { $0.visible != false }.count
-    }
-
-    private var cachedCourseCount: Int {
-        coursesBySemesterID.values.reduce(0) { partial, items in partial + items.count }
-    }
-
-    private var upcomingStartEntries: [ScheduleEntryDTO] {
-        let now = Date()
-        let upcoming = startScheduleEntries.filter { entry in
-            guard let start = parseAPIDate(entry.start) else { return false }
-            return start >= now
-        }
-        return upcoming.isEmpty ? startScheduleEntries : upcoming
-    }
-
-    private var startStatsGrid: some View {
-        let columns = [
-            GridItem(.flexible(minimum: 150)),
-            GridItem(.flexible(minimum: 150))
-        ]
-
-        return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-            dashboardStatTile(
-                title: "Semester",
-                value: "\(semesterViewModel.semesters.count)",
-                systemImage: "graduationcap"
-            )
-            dashboardStatTile(
-                title: "Aktiv fuer Sync",
-                value: "\(semesterSelectionStore.activeSemesterIDs.count)",
-                systemImage: "checkmark.seal",
-                footnote: "\(visibleSemesterCount) sichtbar"
-            )
-            dashboardStatTile(
-                title: "Kurse im Cache",
-                value: "\(cachedCourseCount)",
-                systemImage: "books.vertical"
-            )
-            dashboardStatTile(
-                title: "Termine heute",
-                value: "\(startScheduleEntries.count)",
-                systemImage: "calendar.badge.clock",
-                footnote: startScheduleLoadedDate.map { "Stand: \(Self.fileDateFormatter.string(from: $0))" }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func dashboardStatTile(title: String, value: String, systemImage: String, footnote: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: systemImage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3.weight(.semibold))
-            if let footnote {
-                Text(footnote)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        }
-    }
-
-    private func startScheduleWidget(limit: Int) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Label("Heute", systemImage: "sun.max")
-                        .font(.headline)
-                    Spacer()
-                    if isLoadingStartSchedule {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Button("Neu laden") {
-                        Task { await loadStartSchedule(force: true) }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isLoadingStartSchedule)
-                }
-
-                if isLoadingStartSchedule, startScheduleEntries.isEmpty {
-                    ProgressView("Lade Stundenplan ...")
-                        .controlSize(.small)
-                } else if let startScheduleError {
-                    Text(startScheduleError)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if upcomingStartEntries.isEmpty {
-                    Text("Heute sind keine Termine im Stundenplan.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(upcomingStartEntries.prefix(limit))) { entry in
-                            startScheduleRow(entry)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Tagesagenda", systemImage: "clock")
-        }
-    }
-
-    private var startSemesterOverviewWidget: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                if semesterViewModel.semesters.isEmpty {
-                    Text("Noch keine Semester geladen.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(Array(semesterViewModel.semesters.prefix(6))) { semester in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(semester.title)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(semesterDateRangeText(semester))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            if semesterSelectionStore.isActive(semesterID: semester.id) {
-                                Text("Aktiv")
-                                    .font(.caption2.weight(.semibold))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(Color.green.opacity(0.16))
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Semesterueberblick", systemImage: "calendar")
-        }
-    }
-
-    private var startQuickActionsWidget: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Schnellaktionen")
-                    .font(.headline)
-
-                HStack(spacing: 8) {
-                    Button("Semester neu laden") {
-                        semesterViewModel.loadSemesters()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button("Erstes Semester oeffnen") {
-                        if let first = semesterViewModel.semesters.first {
-                            selectedSemesterID = first.id
-                            selectedCourseID = nil
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(semesterViewModel.semesters.isEmpty)
-
-                    Button("Debug oeffnen") {
-                        debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
-                        openWindow(id: "debugWindow")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func semesterDateRangeText(_ semester: SemesterDTO) -> String {
-        let start = semester.begin ?? semester.startOfLectures
-        let end = semester.end ?? semester.endOfLectures
-
-        switch (start, end) {
-        case (.some(let start), .some(let end)):
-            return "\(Self.fileDateFormatter.string(from: start)) - \(Self.fileDateFormatter.string(from: end))"
-        case (.some(let start), .none):
-            return "Start: \(Self.fileDateFormatter.string(from: start))"
-        case (.none, .some(let end)):
-            return "Ende: \(Self.fileDateFormatter.string(from: end))"
-        default:
-            return "Kein Zeitraum hinterlegt"
-        }
-    }
-
-    private var coursesColumn: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Kurse im Semester")
-                    .font(.headline.weight(.semibold))
-                Spacer()
-                if isLoadingCourses {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text("\(courses.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.bar)
-
-            List(courses, selection: $selectedCourseID) { course in
-                courseRow(course)
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(Color(nsColor: .controlBackgroundColor))
-
-            Text(courseStatusMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.bar)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var detailColumn: some View {
-        VStack(spacing: 0) {
-            detailHeader
-
-            VStack(alignment: .leading, spacing: 16) {
-                if let selectedCourse = selectedCourse {
-                    courseDetailCard(for: selectedCourse)
-                    if isLoadingCourseDetail {
-                        ProgressView("Lade Kursdetail ...")
-                            .controlSize(.small)
-                    }
-                } else if let selectedSemester {
-                    semesterStatusPlaceholder(for: selectedSemester)
-                } else {
-                    Text("Waehle links ein Semester aus.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(24)
-            .background(Color(nsColor: .textBackgroundColor))
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(.bar)
-        }
-    }
-
-    private var detailHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(selectedSemester?.title ?? "Kein Semester ausgewaehlt")
-                    .font(.title.weight(.bold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Text(statusController.syncState.statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(.bar)
-    }
-
-    private func semesterStatusPlaceholder(for semester: SemesterDTO) -> some View {
-        let entries = semesterScheduleEventsBySemesterID[semester.id] ?? []
-        let errorText = semesterScheduleErrorsBySemesterID[semester.id]
-        let isLoading = loadingSemesterScheduleIDs.contains(semester.id)
-        let loadedAt = semesterScheduleLoadedAtBySemesterID[semester.id]
-
-        return GroupBox("Semester-Status") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(semester.title)
-                        .font(.title3.weight(.semibold))
-
-                    Spacer()
-
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-
-                    Button("Neu laden") {
-                        Task {
-                            await loadSemesterSchedule(for: semester, force: true)
-                        }
-                    }
-                    .disabled(isLoading)
-                }
-
-                if let errorText {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if isLoading, entries.isEmpty {
-                    ProgressView("Lade Stundenplan des Semesters ...")
-                        .controlSize(.small)
-                } else if entries.isEmpty {
-                    Text("Keine Stundenplantermine fuer dieses Semester gefunden.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(entries) { event in
-                                semesterScheduleRow(event)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(minHeight: 140, maxHeight: 320)
-                }
-
-                if let loadedAt {
-                    Text("Stand: \(Self.fileDateFormatter.string(from: loadedAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("Waehle in der mittleren Spalte einen Kurs aus, um Kursdetails zu sehen.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var detailActions: some View {
-        HStack {
-            Button("Jetzt synchronisieren") {
-                syncScheduler.triggerManualSync()
-            }
-
-            SettingsLink {
-                Text("Einstellungen")
-            }
-
-            Button("Debug öffnen") {
-                debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
-                openWindow(id: "debugWindow")
-            }
-        }
-    }
-
-    private var selectedSemester: SemesterDTO? {
-        guard let selectedSemesterID else { return nil }
-        return semesterViewModel.semesters.first { $0.id == selectedSemesterID }
-    }
-
-    private var selectedCourse: CourseDTO? {
-        guard let selectedCourseID else { return nil }
-        return courses.first { $0.id == selectedCourseID }
-    }
-
-    private var defaultCourseDetailSections: [CourseDetailSection] {
+    var defaultCourseDetailSections: [CourseDetailSection] {
         [
             .description,
             .files,
@@ -877,7 +296,7 @@ struct ContentView: View {
         ]
     }
 
-    private var visibleCourseDetailSections: [CourseDetailSection] {
+    var visibleCourseDetailSections: [CourseDetailSection] {
         guard let selectedCourseID else { return defaultCourseDetailSections }
         guard let pages = wikisByCourseID[selectedCourseID] else { return defaultCourseDetailSections }
         if pages.isEmpty {
@@ -886,11 +305,11 @@ struct ContentView: View {
         return defaultCourseDetailSections
     }
 
-    private var participantTaskID: String {
+    var participantTaskID: String {
         "\(selectedCourseID ?? "none"):\(selectedCourseDetailSectionID)"
     }
 
-    private var fileListTaskID: String {
+    var fileListTaskID: String {
         let courseID = selectedCourseID ?? "none"
         let folderID = selectedCourseID
             .flatMap { activeFileFolderID(for: $0) }
@@ -898,11 +317,11 @@ struct ContentView: View {
         return "\(courseID):\(selectedCourseDetailSectionID):\(folderID)"
     }
 
-    private var chatListTaskID: String {
+    var chatListTaskID: String {
         "\(selectedCourseID ?? "none"):\(selectedCourseDetailSectionID)"
     }
 
-    private var chatWindowTaskID: String {
+    var chatWindowTaskID: String {
         let courseID = selectedCourseID ?? "none"
         let threadID = selectedCourseID
             .flatMap { selectedChatThreadIDByCourseID[$0] }
@@ -910,15 +329,15 @@ struct ContentView: View {
         return "\(courseID):\(selectedCourseDetailSectionID):\(threadID)"
     }
 
-    private var wikiListTaskID: String {
+    var wikiListTaskID: String {
         "\(selectedCourseID ?? "none"):\(selectedCourseDetailSectionID)"
     }
 
-    private var forumTaskID: String {
+    var forumTaskID: String {
         "\(selectedCourseID ?? "none"):\(selectedCourseDetailSectionID)"
     }
 
-    private var forumEntryTaskID: String {
+    var forumEntryTaskID: String {
         let courseID = selectedCourseID ?? "none"
         let categoryID = selectedCourseID
             .flatMap { selectedForumCategoryIDByCourseID[$0] }
@@ -926,7 +345,7 @@ struct ContentView: View {
         return "\(courseID):\(selectedCourseDetailSectionID):\(categoryID)"
     }
 
-    private var forumReplyTaskID: String {
+    var forumReplyTaskID: String {
         let courseID = selectedCourseID ?? "none"
         let categoryID = selectedCourseID
             .flatMap { selectedForumCategoryIDByCourseID[$0] }
@@ -935,11 +354,11 @@ struct ContentView: View {
         return "\(courseID):\(selectedCourseDetailSectionID):\(categoryID):\(entryID)"
     }
 
-    private var newsTaskID: String {
+    var newsTaskID: String {
         selectedCourseID ?? "none"
     }
 
-    private var newsCommentTaskID: String {
+    var newsCommentTaskID: String {
         let courseID = selectedCourseID ?? "none"
         let newsID = selectedCourseID
             .flatMap { selectedNewsIDByCourseID[$0] }
@@ -947,28 +366,28 @@ struct ContentView: View {
         return "\(courseID):\(newsID)"
     }
 
-    private var semesterIDsSignature: String {
+    var semesterIDsSignature: String {
         semesterViewModel.semesters.map(\.id).joined(separator: ",")
     }
 
-    private var startScheduleTaskID: String {
+    var startScheduleTaskID: String {
         let dayKey = Self.scheduleDayFormatter.string(from: Date())
         return "\(selectedPage.rawValue):\(selectedSemesterID == nil ? "no-semester" : "semester"):\(dayKey)"
     }
 
-    private var semesterScheduleTaskID: String {
+    var semesterScheduleTaskID: String {
         "\(selectedSemesterID ?? "none"):\(selectedCourseID ?? "none")"
     }
 
-    private func isSelectedMenuPage(_ page: SidebarPage) -> Bool {
+    func isSelectedMenuPage(_ page: SidebarPage) -> Bool {
         selectedSemesterID == nil && selectedSidebarPage == page
     }
 
-    private func isSelectedSemester(_ semesterID: String) -> Bool {
+    func isSelectedSemester(_ semesterID: String) -> Bool {
         selectedSemesterID == semesterID
     }
 
-    private func startScheduleRow(_ entry: ScheduleEntryDTO) -> some View {
+    func startScheduleRow(_ entry: ScheduleEntryDTO) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "calendar.badge.clock")
                 .foregroundStyle(Color.accentColor)
@@ -1003,7 +422,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func semesterScheduleRow(_ event: EventDTO) -> some View {
+    func semesterScheduleRow(_ event: EventDTO) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "clock.arrow.circlepath")
                 .foregroundStyle(Color.accentColor)
@@ -1036,15 +455,15 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func activeRowBackground(isActive: Bool) -> Color {
+    func activeRowBackground(isActive: Bool) -> Color {
         isActive ? Color.accentColor.opacity(0.14) : .clear
     }
 
-    private func activeRowForeground(isActive: Bool) -> Color {
+    func activeRowForeground(isActive: Bool) -> Color {
         isActive ? Color.accentColor : Color.primary
     }
 
-    private struct SidebarSelectionModifier: ViewModifier {
+    struct SidebarSelectionModifier: ViewModifier {
         let isActive: Bool
 
         func body(content: Content) -> some View {
@@ -1058,27 +477,27 @@ struct ContentView: View {
         }
     }
 
-    private func selectFirstSemesterIfNeeded() {
+    func selectFirstSemesterIfNeeded() {
         guard selectedSemesterID == nil else { return }
         guard let firstSemester = semesterViewModel.semesters.first else { return }
         selectedSemesterID = firstSemester.id
     }
 
-    private func pruneCourseOverviewCacheToKnownSemesters() {
+    func pruneCourseOverviewCacheToKnownSemesters() {
         let knownSemesterIDs = Set(semesterViewModel.semesters.map(\.id))
         coursesBySemesterID = coursesBySemesterID.filter { knownSemesterIDs.contains($0.key) }
         coursePrefetchErrorsBySemesterID = coursePrefetchErrorsBySemesterID.filter { knownSemesterIDs.contains($0.key) }
         prefetchingSemesterCourseIDs = prefetchingSemesterCourseIDs.intersection(knownSemesterIDs)
     }
 
-    private func prefetchCourseOverviewsForLoadedSemesters() async {
+    func prefetchCourseOverviewsForLoadedSemesters() async {
         guard !semesterViewModel.semesters.isEmpty else { return }
         for semester in semesterViewModel.semesters {
             await prefetchCourseOverview(for: semester.id)
         }
     }
 
-    private func prefetchCourseOverview(for semesterID: String) async {
+    func prefetchCourseOverview(for semesterID: String) async {
         guard coursesBySemesterID[semesterID] == nil else { return }
         guard !prefetchingSemesterCourseIDs.contains(semesterID) else { return }
 
@@ -1095,7 +514,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadCoursesForSelectedSemester() async {
+    func loadCoursesForSelectedSemester() async {
         guard let selectedSemesterID else {
             courses = []
             selectedCourseID = nil
@@ -1125,11 +544,11 @@ struct ContentView: View {
         }
     }
 
-    private func sortCoursesForDisplay(_ courses: [CourseDTO]) -> [CourseDTO] {
+    func sortCoursesForDisplay(_ courses: [CourseDTO]) -> [CourseDTO] {
         courses.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    private func loadStartScheduleIfNeeded() async {
+    func loadStartScheduleIfNeeded() async {
         guard selectedSemesterID == nil, selectedPage == .start else { return }
 
         let calendar = Calendar.current
@@ -1141,7 +560,7 @@ struct ContentView: View {
         await loadStartSchedule(force: false)
     }
 
-    private func loadStartSchedule(force: Bool) async {
+    func loadStartSchedule(force: Bool) async {
         guard selectedSemesterID == nil, selectedPage == .start else { return }
         if isLoadingStartSchedule {
             return
@@ -1185,14 +604,14 @@ struct ContentView: View {
         }
     }
 
-    private func loadSemesterScheduleIfNeeded() async {
+    func loadSemesterScheduleIfNeeded() async {
         guard selectedCourseID == nil else { return }
         guard let semester = selectedSemester else { return }
         guard semesterScheduleEventsBySemesterID[semester.id] == nil else { return }
         await loadSemesterSchedule(for: semester, force: false)
     }
 
-    private func loadSemesterSchedule(for semester: SemesterDTO, force: Bool) async {
+    func loadSemesterSchedule(for semester: SemesterDTO, force: Bool) async {
         let semesterID = semester.id
 
         if loadingSemesterScheduleIDs.contains(semesterID) {
@@ -1255,13 +674,12 @@ struct ContentView: View {
         }
     }
 
-    private func loadCourseDetailForSelectedCourse() async {
+    func loadCourseDetailForSelectedCourse() async {
         guard let selectedCourseID else {
             return
         }
 
         selectedCourseDetailSectionID = CourseDetailSection.description.id
-        selectedParticipantForInfo = nil
         fileFolderPathByCourseID[selectedCourseID] = []
         selectedChatThreadIDByCourseID[selectedCourseID] = nil
         selectedWikiPageIDByCourseID[selectedCourseID] = nil
@@ -1287,7 +705,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchAllTabContentForCourse(_ courseID: String) async {
+    func prefetchAllTabContentForCourse(_ courseID: String) async {
         guard !prefetchingCourseIDs.contains(courseID) else {
             return
         }
@@ -1304,7 +722,7 @@ struct ContentView: View {
         _ = await (newsTask, filesTask, chatTask, wikiTask, participantTask, forumTask)
     }
 
-    private func prefetchNewsContent(for courseID: String) async {
+    func prefetchNewsContent(for courseID: String) async {
         if courseNewsByCourseID[courseID] == nil {
             do {
                 let newsItems = try await repository.fetchCourseNews(courseID: courseID, offset: 0, limit: 100)
@@ -1351,7 +769,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchRootFilesContent(for courseID: String) async {
+    func prefetchRootFilesContent(for courseID: String) async {
         let contextKey = fileContextKey(courseID: courseID, folderID: nil)
         if filesByContextKey[contextKey] != nil, foldersByContextKey[contextKey] != nil {
             return
@@ -1386,7 +804,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchChatContent(for courseID: String) async {
+    func prefetchChatContent(for courseID: String) async {
         if chatsByCourseID[courseID] == nil {
             do {
                 let threads = try await repository.fetchCourseChatThreads(courseID: courseID)
@@ -1428,7 +846,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchWikiContent(for courseID: String) async {
+    func prefetchWikiContent(for courseID: String) async {
         guard wikisByCourseID[courseID] == nil else {
             return
         }
@@ -1448,7 +866,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchParticipantContent(for courseID: String) async {
+    func prefetchParticipantContent(for courseID: String) async {
         guard participantsByCourseID[courseID] == nil else {
             return
         }
@@ -1462,7 +880,7 @@ struct ContentView: View {
         }
     }
 
-    private func prefetchForumContent(for courseID: String) async {
+    func prefetchForumContent(for courseID: String) async {
         if forumsByCourseID[courseID] == nil {
             do {
                 let categories = try await repository.fetchCourseForumCategories(courseID: courseID, offset: 0, limit: 1000)
@@ -1548,7 +966,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func courseDetailCard(for course: CourseDTO) -> some View {
+    func courseDetailCard(for course: CourseDTO) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1647,7 +1065,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func courseRow(_ course: CourseDTO) -> some View {
+    func courseRow(_ course: CourseDTO) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "book.closed")
                 .foregroundStyle(.secondary)
@@ -1677,13 +1095,13 @@ struct ContentView: View {
         }
     }
 
-    private func courseSecondaryLine(for course: CourseDTO) -> String? {
+    func courseSecondaryLine(for course: CourseDTO) -> String? {
         if let subtitle = nonEmpty(course.subtitle) { return subtitle }
         if let number = nonEmpty(course.courseNumber) { return "Kursnr. \(number)" }
         return courseTypeLabel(for: course)
     }
 
-    private func courseMetaSummary(for course: CourseDTO) -> String? {
+    func courseMetaSummary(for course: CourseDTO) -> String? {
         var parts: [String] = []
         if let number = nonEmpty(course.courseNumber) {
             parts.append("Kursnr. \(number)")
@@ -1694,7 +1112,7 @@ struct ContentView: View {
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
-    private func courseTypeLabel(for course: CourseDTO) -> String? {
+    func courseTypeLabel(for course: CourseDTO) -> String? {
         if let type = course.courseType {
             return "Typ \(type)"
         }
@@ -1702,7 +1120,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func courseDetailSectionContent(for course: CourseDTO, sectionID: String) -> some View {
+    func courseDetailSectionContent(for course: CourseDTO, sectionID: String) -> some View {
         switch sectionID {
         case CourseDetailSection.description.id:
             if let description = nonEmpty(course.description) {
@@ -1804,7 +1222,7 @@ struct ContentView: View {
         }
     }
 
-    private func newsDemoBlock(for course: CourseDTO) -> some View {
+    func newsDemoBlock(for course: CourseDTO) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("News")
@@ -1852,7 +1270,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func shouldShowNewsBlock(for courseID: String) -> Bool {
+    func shouldShowNewsBlock(for courseID: String) -> Bool {
         if isLoadingCourseNews, courseNewsByCourseID[courseID] == nil {
             return true
         }
@@ -1865,7 +1283,7 @@ struct ContentView: View {
         return false
     }
 
-    private func newsRow(_ newsItem: NewsDTO, courseID: String) -> some View {
+    func newsRow(_ newsItem: NewsDTO, courseID: String) -> some View {
         let isSelected = selectedNewsIDByCourseID[courseID] == newsItem.id
 
         return Button {
@@ -1903,7 +1321,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func newsCommentsWindowBlock(for courseID: String) -> some View {
+    func newsCommentsWindowBlock(for courseID: String) -> some View {
         if let selectedNewsID = selectedNewsIDByCourseID[courseID] {
             if loadingNewsCommentIDs.contains(selectedNewsID), newsCommentsByNewsID[selectedNewsID] == nil {
                 ProgressView("Lade Kommentare ...")
@@ -1935,7 +1353,7 @@ struct ContentView: View {
         }
     }
 
-    private func newsCommentRow(_ comment: NewsCommentDTO) -> some View {
+    func newsCommentRow(_ comment: NewsCommentDTO) -> some View {
         let parsed = nonEmpty(comment.content).flatMap { content in
             if content.contains("<"), content.contains(">") {
                 return nonEmpty(plainText(fromHTML: content) ?? content)
@@ -1959,7 +1377,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func courseSectionNavigation(for course: CourseDTO) -> some View {
+    func courseSectionNavigation(for course: CourseDTO) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(visibleCourseDetailSections) { section in
@@ -1992,7 +1410,7 @@ struct ContentView: View {
         }
     }
 
-    private func sectionItemCount(for sectionID: String, courseID: String) -> Int? {
+    func sectionItemCount(for sectionID: String, courseID: String) -> Int? {
         switch sectionID {
         case CourseDetailSection.files.id:
             let contextKey = fileContextKey(courseID: courseID, folderID: nil)
@@ -2013,13 +1431,13 @@ struct ContentView: View {
         }
     }
 
-    private func sectionTitle(for sectionID: String) -> String {
+    func sectionTitle(for sectionID: String) -> String {
         visibleCourseDetailSections.first(where: { $0.id == sectionID })?.title
             ?? defaultCourseDetailSections.first(where: { $0.id == sectionID })?.title
             ?? "Bereich"
     }
 
-    private func supportsDetailSearch(for sectionID: String) -> Bool {
+    func supportsDetailSearch(for sectionID: String) -> Bool {
         switch sectionID {
         case CourseDetailSection.files.id,
              CourseDetailSection.chat.id,
@@ -2032,47 +1450,47 @@ struct ContentView: View {
         }
     }
 
-    private func detailSearchBinding(for sectionID: String) -> Binding<String> {
+    func detailSearchBinding(for sectionID: String) -> Binding<String> {
         Binding(
             get: { detailSearchTextBySectionID[sectionID] ?? "" },
             set: { detailSearchTextBySectionID[sectionID] = $0 }
         )
     }
 
-    private func rawDetailSearchQuery(for sectionID: String) -> String {
+    func rawDetailSearchQuery(for sectionID: String) -> String {
         (detailSearchTextBySectionID[sectionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func normalizedDetailSearchQuery(for sectionID: String) -> String {
+    func normalizedDetailSearchQuery(for sectionID: String) -> String {
         rawDetailSearchQuery(for: sectionID).lowercased()
     }
 
-    private func detailSearchNoResultsText(for sectionID: String) -> String {
+    func detailSearchNoResultsText(for sectionID: String) -> String {
         let raw = rawDetailSearchQuery(for: sectionID)
         guard !raw.isEmpty else { return "Keine Treffer gefunden." }
         return "Keine Treffer fuer \"\(raw)\"."
     }
 
-    private func detailSectionCacheKey(courseID: String, sectionID: String) -> String {
+    func detailSectionCacheKey(courseID: String, sectionID: String) -> String {
         "\(courseID)::\(sectionID)"
     }
 
-    private func markDetailSectionLoadedNow(courseID: String, sectionID: String) {
+    func markDetailSectionLoadedNow(courseID: String, sectionID: String) {
         detailSectionLoadedAtByKey[detailSectionCacheKey(courseID: courseID, sectionID: sectionID)] = Date()
     }
 
-    private func detailSectionLoadedAtText(courseID: String, sectionID: String) -> String? {
+    func detailSectionLoadedAtText(courseID: String, sectionID: String) -> String? {
         guard let loadedAt = detailSectionLoadedAtByKey[detailSectionCacheKey(courseID: courseID, sectionID: sectionID)] else {
             return nil
         }
         return "Stand: \(Self.fileDateFormatter.string(from: loadedAt))"
     }
 
-    private func containsSearch(_ haystack: String, query: String) -> Bool {
+    func containsSearch(_ haystack: String, query: String) -> Bool {
         query.isEmpty || haystack.lowercased().contains(query)
     }
 
-    private func preloadWikiAvailability(for courseID: String) async {
+    func preloadWikiAvailability(for courseID: String) async {
         guard wikisByCourseID[courseID] == nil else { return }
 
         do {
@@ -2090,14 +1508,38 @@ struct ContentView: View {
         }
     }
 
-    private func emptySectionText(_ text: String) -> some View {
+    func emptySectionText(_ text: String) -> some View {
         Text(text)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    func overviewMessageCard(_ message: String, isError: Bool) -> some View {
+        let tint: Color = isError ? .red : .orange
+        let icon = isError ? "exclamationmark.triangle.fill" : "info.circle.fill"
+
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .padding(.top, 1)
+
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.1))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(tint.opacity(0.35), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     @ViewBuilder
-    private func detailRow(_ label: String, _ value: String?) -> some View {
+    func detailRow(_ label: String, _ value: String?) -> some View {
         if let value {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(label)
@@ -2112,7 +1554,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func forumsBlock(for course: CourseDTO) -> some View {
+    func forumsBlock(for course: CourseDTO) -> some View {
         let query = normalizedDetailSearchQuery(for: CourseDetailSection.forum.id)
 
         if isLoadingForums, forumsByCourseID[course.id] == nil {
@@ -2179,7 +1621,7 @@ struct ContentView: View {
         }
     }
 
-    private func forumCategoryRow(_ category: StudIPResourceRepository.CourseForumCategory, courseID: String) -> some View {
+    func forumCategoryRow(_ category: StudIPResourceRepository.CourseForumCategory, courseID: String) -> some View {
         let isSelected = selectedForumCategoryIDByCourseID[courseID] == category.id
 
         return Button {
@@ -2222,7 +1664,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func forumEntriesWindowBlock(for courseID: String) -> some View {
+    func forumEntriesWindowBlock(for courseID: String) -> some View {
         if let selectedCategoryID = selectedForumCategoryIDByCourseID[courseID] {
             if loadingForumCategoryIDs.contains(selectedCategoryID), forumEntriesByCategoryID[selectedCategoryID] == nil {
                 ProgressView("Lade Forum-Themen ...")
@@ -2267,7 +1709,7 @@ struct ContentView: View {
         }
     }
 
-    private func forumEntryRow(_ entry: ForumEntryDTO, categoryID: String) -> some View {
+    func forumEntryRow(_ entry: ForumEntryDTO, categoryID: String) -> some View {
         let isSelected = selectedForumEntryIDByCategoryID[categoryID] == entry.id
 
         return Button {
@@ -2305,7 +1747,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func forumRepliesWindowBlock(categoryID: String) -> some View {
+    func forumRepliesWindowBlock(categoryID: String) -> some View {
         if let selectedEntryID = selectedForumEntryIDByCategoryID[categoryID] {
             if loadingForumEntryIDs.contains(selectedEntryID), forumRepliesByEntryID[selectedEntryID] == nil {
                 ProgressView("Lade Antworten ...")
@@ -2346,7 +1788,7 @@ struct ContentView: View {
         }
     }
 
-    private func forumReplyRow(_ reply: ForumEntryDTO) -> some View {
+    func forumReplyRow(_ reply: ForumEntryDTO) -> some View {
         let bubbleColor = Color.accentColor.opacity(0.11)
 
         return HStack(alignment: .top, spacing: 0) {
@@ -2382,7 +1824,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func filesBlock(for course: CourseDTO) -> some View {
+    func filesBlock(for course: CourseDTO) -> some View {
         let contextKey = activeFileContextKey(for: course.id)
         let folders = foldersByContextKey[contextKey] ?? []
         let files = filesByContextKey[contextKey] ?? []
@@ -2472,7 +1914,7 @@ struct ContentView: View {
         }
     }
 
-    private func folderRow(_ folder: FolderDTO, courseID: String) -> some View {
+    func folderRow(_ folder: FolderDTO, courseID: String) -> some View {
         Button {
             openFolder(folder, for: courseID)
         } label: {
@@ -2510,7 +1952,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    private func fileRow(_ fileRef: CourseFileRefDTO, contextKey: String) -> some View {
+    func fileRow(_ fileRef: CourseFileRefDTO, contextKey: String) -> some View {
         let canPreview = fileRef.isReadable ?? fileRef.isDownloadable ?? true
         let canDownload = fileRef.isDownloadable ?? fileRef.isReadable ?? true
 
@@ -2595,7 +2037,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func chatsBlock(for course: CourseDTO) -> some View {
+    func chatsBlock(for course: CourseDTO) -> some View {
         let query = normalizedDetailSearchQuery(for: CourseDetailSection.chat.id)
 
         if isLoadingChats, chatsByCourseID[course.id] == nil {
@@ -2663,7 +2105,7 @@ struct ContentView: View {
         }
     }
 
-    private func chatRow(_ thread: StudIPResourceRepository.CourseChatThread, courseID: String) -> some View {
+    func chatRow(_ thread: StudIPResourceRepository.CourseChatThread, courseID: String) -> some View {
         let isSelected = selectedChatThreadIDByCourseID[courseID] == thread.id
 
         return Button {
@@ -2728,7 +2170,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func chatWindowBlock(for courseID: String) -> some View {
+    func chatWindowBlock(for courseID: String) -> some View {
         if let threadID = selectedChatThreadIDByCourseID[courseID] {
             if loadingChatThreadIDs.contains(threadID), chatMessagesByThreadID[threadID] == nil {
                 ProgressView("Lade Chatfenster ...")
@@ -2769,7 +2211,7 @@ struct ContentView: View {
         }
     }
 
-    private func chatMessageRow(_ message: BlubberPostingDTO) -> some View {
+    func chatMessageRow(_ message: BlubberPostingDTO) -> some View {
         let alignTrailing = abs(message.id.hashValue) % 4 == 0
         let bubbleColor = alignTrailing ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.1)
 
@@ -2801,7 +2243,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
     }
 
-    private func smallBadge(_ text: String) -> some View {
+    func smallBadge(_ text: String) -> some View {
         Text(text)
             .font(.caption2)
             .padding(.horizontal, 6)
@@ -2811,7 +2253,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func wikisBlock(for course: CourseDTO) -> some View {
+    func wikisBlock(for course: CourseDTO) -> some View {
         let query = normalizedDetailSearchQuery(for: CourseDetailSection.wiki.id)
 
         if isLoadingWikis, wikisByCourseID[course.id] == nil {
@@ -2869,7 +2311,7 @@ struct ContentView: View {
         }
     }
 
-    private func wikiRow(_ page: StudIPResourceRepository.CourseWikiPage, courseID: String) -> some View {
+    func wikiRow(_ page: StudIPResourceRepository.CourseWikiPage, courseID: String) -> some View {
         let isSelected = selectedWikiPageIDByCourseID[courseID] == page.id
 
         return Button {
@@ -2909,7 +2351,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func wikiWindowBlock(for courseID: String) -> some View {
+    func wikiWindowBlock(for courseID: String) -> some View {
         if let pages = wikisByCourseID[courseID], !pages.isEmpty {
             if let selectedPage = selectedWikiPage(for: courseID, pages: pages) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -2943,144 +2385,7 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private func participantsBlock(for course: CourseDTO) -> some View {
-        let query = normalizedDetailSearchQuery(for: CourseDetailSection.participants.id)
-
-        if isLoadingParticipants, participantsByCourseID[course.id] == nil {
-            ProgressView("Lade Teilnehmer ...")
-                .controlSize(.small)
-        } else if let participants = participantsByCourseID[course.id], !participants.isEmpty {
-            let filteredParticipants = query.isEmpty ? participants : participants.filter { participant in
-                containsSearch(
-                    [
-                        participant.displayName,
-                        nonEmpty(participant.email),
-                        nonEmpty(participant.permission),
-                        nonEmpty(participant.label),
-                        participant.userID
-                    ]
-                    .compactMap { $0 }
-                    .joined(separator: " "),
-                    query: query
-                )
-            }
-            let groupedParticipants = groupedParticipantsByRole(filteredParticipants)
-
-            if filteredParticipants.isEmpty {
-                Text(detailSearchNoResultsText(for: CourseDetailSection.participants.id))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if groupedParticipants.isEmpty {
-                Text("Keine Teilnehmer mit Rolle root/admin/dozent/tutor/autor vorhanden.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Self.participantRoleOrder, id: \.self) { roleKey in
-                        if let roleParticipants = groupedParticipants[roleKey], !roleParticipants.isEmpty {
-                            participantRoleTable(
-                                title: participantRoleTitle(for: roleKey),
-                                participants: roleParticipants
-                            )
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 140)
-            }
-        } else if let errorText = participantErrorsByCourseID[course.id] {
-            Text(errorText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text("Keine Teilnehmer gefunden.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func participantRoleTable(
-        title: String,
-        participants: [StudIPResourceRepository.CourseParticipant]
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("\(title) (\(participants.count))", systemImage: "person.3.sequence")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            ScrollView(.horizontal) {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                    GridRow {
-                        Text("Name").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text("E-Mail").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text("Label").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text("Pos.").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text("Gr.").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text("Aktionen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    }
-
-                    Divider()
-                        .gridCellColumns(6)
-
-                    ForEach(participants) { participant in
-                        GridRow(alignment: .center) {
-                            Text(participant.displayName)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .help("User-ID: \(participant.userID)")
-
-                            Text(nonEmpty(participant.email) ?? "—")
-                                .foregroundStyle(nonEmpty(participant.email) == nil ? .secondary : .primary)
-                                .lineLimit(1)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Text(nonEmpty(participant.label) ?? "—")
-                                .foregroundStyle(nonEmpty(participant.label) == nil ? .secondary : .primary)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Text(participant.position.map(String.init) ?? "—")
-                                .foregroundStyle(participant.position == nil ? .secondary : .primary)
-                                .frame(width: 36, alignment: .leading)
-
-                            Text(participant.group.map(String.init) ?? "—")
-                                .foregroundStyle(participant.group == nil ? .secondary : .primary)
-                                .frame(width: 32, alignment: .leading)
-
-                            HStack(spacing: 8) {
-                                Button {
-                                    selectedParticipantForInfo = participant
-                                } label: {
-                                    Image(systemName: "info.circle")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Personeninfos")
-
-                                Button {
-                                    openMail(for: participant)
-                                } label: {
-                                    Image(systemName: "envelope")
-                                }
-                                .buttonStyle(.borderless)
-                                .disabled(nonEmpty(participant.email) == nil)
-                                .help(nonEmpty(participant.email) == nil ? "Keine Mailadresse vorhanden" : "Mail senden")
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(10)
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func loadNewsForSelectedCourse(force: Bool = false) async {
+    func loadNewsForSelectedCourse(force: Bool = false) async {
         guard let selectedCourseID else {
             return
         }
@@ -3132,7 +2437,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadNewsCommentsForSelectedNews(force: Bool = false) async {
+    func loadNewsCommentsForSelectedNews(force: Bool = false) async {
         guard let selectedCourseID else {
             return
         }
@@ -3176,7 +2481,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadFilesForSelectedSection(force: Bool = false) async {
+    func loadFilesForSelectedSection(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.files.id else {
             return
         }
@@ -3244,7 +2549,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadChatsForSelectedSection(force: Bool = false) async {
+    func loadChatsForSelectedSection(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.chat.id else {
             return
         }
@@ -3283,7 +2588,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadChatMessagesForSelectedThread(force: Bool = false) async {
+    func loadChatMessagesForSelectedThread(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.chat.id else {
             return
         }
@@ -3335,7 +2640,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadWikisForSelectedSection(force: Bool = false) async {
+    func loadWikisForSelectedSection(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.wiki.id else {
             return
         }
@@ -3374,7 +2679,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadParticipantsForSelectedSection(force: Bool = false) async {
+    func loadParticipantsForSelectedSection(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.participants.id else {
             return
         }
@@ -3407,7 +2712,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadForumsForSelectedSection(force: Bool = false) async {
+    func loadForumsForSelectedSection(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.forum.id else {
             return
         }
@@ -3463,7 +2768,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadForumEntriesForSelectedCategory(force: Bool = false) async {
+    func loadForumEntriesForSelectedCategory(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.forum.id else {
             return
         }
@@ -3524,7 +2829,7 @@ struct ContentView: View {
         }
     }
 
-    private func loadForumRepliesForSelectedEntry(force: Bool = false) async {
+    func loadForumRepliesForSelectedEntry(force: Bool = false) async {
         guard selectedCourseDetailSectionID == CourseDetailSection.forum.id else {
             return
         }
@@ -3585,7 +2890,7 @@ struct ContentView: View {
         }
     }
 
-    private func forceReloadNewsForSelectedCourse() async {
+    func forceReloadNewsForSelectedCourse() async {
         guard let courseID = selectedCourseID else { return }
 
         courseNewsByCourseID[courseID] = nil
@@ -3600,7 +2905,7 @@ struct ContentView: View {
         await loadNewsCommentsForSelectedNews(force: true)
     }
 
-    private func forceReloadAllDetailContent(for courseID: String) async {
+    func forceReloadAllDetailContent(for courseID: String) async {
         let contextPrefix = "\(courseID)::"
         let fileContextKeys = foldersByContextKey.keys.filter { $0.hasPrefix(contextPrefix) }
 
@@ -3673,7 +2978,7 @@ struct ContentView: View {
         await prefetchAllTabContentForCourse(courseID)
     }
 
-    private func forceReloadFilesForSelectedSection() async {
+    func forceReloadFilesForSelectedSection() async {
         guard let courseID = selectedCourseID else { return }
         let contextKey = activeFileContextKey(for: courseID)
 
@@ -3684,7 +2989,7 @@ struct ContentView: View {
         await loadFilesForSelectedSection(force: true)
     }
 
-    private func forceReloadChatsForSelectedSection() async {
+    func forceReloadChatsForSelectedSection() async {
         guard let courseID = selectedCourseID else { return }
 
         chatsByCourseID[courseID] = nil
@@ -3699,7 +3004,7 @@ struct ContentView: View {
         await loadChatMessagesForSelectedThread(force: true)
     }
 
-    private func forceReloadWikisForSelectedSection() async {
+    func forceReloadWikisForSelectedSection() async {
         guard let courseID = selectedCourseID else { return }
 
         wikisByCourseID[courseID] = nil
@@ -3708,7 +3013,7 @@ struct ContentView: View {
         await loadWikisForSelectedSection(force: true)
     }
 
-    private func forceReloadParticipantsForSelectedSection() async {
+    func forceReloadParticipantsForSelectedSection() async {
         guard let courseID = selectedCourseID else { return }
 
         participantsByCourseID[courseID] = nil
@@ -3717,7 +3022,7 @@ struct ContentView: View {
         await loadParticipantsForSelectedSection(force: true)
     }
 
-    private func forceReloadForumsForSelectedSection() async {
+    func forceReloadForumsForSelectedSection() async {
         guard let courseID = selectedCourseID else { return }
 
         forumsByCourseID[courseID] = nil
@@ -3737,23 +3042,23 @@ struct ContentView: View {
         await loadForumRepliesForSelectedEntry(force: true)
     }
 
-    private func nonEmpty(_ value: String?) -> String? {
+    func nonEmpty(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func normalizedUserID(_ rawID: String?) -> String? {
+    func normalizedUserID(_ rawID: String?) -> String? {
         guard let id = nonEmpty(rawID) else { return nil }
         return canonicalStudIPID(id)
     }
 
-    private func displayName(forUserID rawUserID: String?) -> String? {
+    func displayName(forUserID rawUserID: String?) -> String? {
         guard let userID = normalizedUserID(rawUserID) else { return nil }
         return nonEmpty(userDisplayNameByID[userID])
     }
 
-    private func resolveDisplayNamesIfNeeded(for rawUserIDs: [String]) async {
+    func resolveDisplayNamesIfNeeded(for rawUserIDs: [String]) async {
         let requestedIDs = Set(rawUserIDs.compactMap { normalizedUserID($0) })
         guard !requestedIDs.isEmpty else { return }
 
@@ -3776,19 +3081,19 @@ struct ContentView: View {
         }
     }
 
-    private func activeFileFolderID(for courseID: String) -> String? {
+    func activeFileFolderID(for courseID: String) -> String? {
         fileFolderPathByCourseID[courseID]?.last?.id
     }
 
-    private func fileContextKey(courseID: String, folderID: String?) -> String {
+    func fileContextKey(courseID: String, folderID: String?) -> String {
         "\(courseID)::\(folderID ?? "root")"
     }
 
-    private func activeFileContextKey(for courseID: String) -> String {
+    func activeFileContextKey(for courseID: String) -> String {
         fileContextKey(courseID: courseID, folderID: activeFileFolderID(for: courseID))
     }
 
-    private func folderBreadcrumbText(for courseID: String) -> String? {
+    func folderBreadcrumbText(for courseID: String) -> String? {
         let trail = fileFolderPathByCourseID[courseID] ?? []
         guard !trail.isEmpty else { return nil }
 
@@ -3796,24 +3101,24 @@ struct ContentView: View {
         return "Pfad: \(names.joined(separator: " / "))"
     }
 
-    private func openFolder(_ folder: FolderDTO, for courseID: String) {
+    func openFolder(_ folder: FolderDTO, for courseID: String) {
         var trail = fileFolderPathByCourseID[courseID] ?? []
         trail.append(folder)
         fileFolderPathByCourseID[courseID] = trail
     }
 
-    private func openParentFolder(for courseID: String) {
+    func openParentFolder(for courseID: String) {
         var trail = fileFolderPathByCourseID[courseID] ?? []
         guard !trail.isEmpty else { return }
         _ = trail.removeLast()
         fileFolderPathByCourseID[courseID] = trail
     }
 
-    private func openRootFolder(for courseID: String) {
+    func openRootFolder(for courseID: String) {
         fileFolderPathByCourseID[courseID] = []
     }
 
-    private func fileMetadataLine(_ fileRef: CourseFileRefDTO) -> String {
+    func fileMetadataLine(_ fileRef: CourseFileRefDTO) -> String {
         var components: [String] = []
 
         if let owner = nonEmpty(fileRef.ownerName) {
@@ -3839,7 +3144,7 @@ struct ContentView: View {
         return components.isEmpty ? "Keine Dateidetails" : components.joined(separator: " • ")
     }
 
-    private func iconName(forMIMEType mimeType: String?) -> String {
+    func iconName(forMIMEType mimeType: String?) -> String {
         guard let mimeType = nonEmpty(mimeType)?.lowercased() else {
             return "doc"
         }
@@ -3864,7 +3169,7 @@ struct ContentView: View {
         return "doc"
     }
 
-    private func downloadFileViaAPI(_ fileRef: CourseFileRefDTO, contextKey: String) {
+    func downloadFileViaAPI(_ fileRef: CourseFileRefDTO, contextKey: String) {
         guard !downloadingFileIDs.contains(fileRef.id) else {
             return
         }
@@ -3893,7 +3198,7 @@ struct ContentView: View {
         }
     }
 
-    private func previewFileViaApplePreview(_ fileRef: CourseFileRefDTO, contextKey: String) {
+    func previewFileViaApplePreview(_ fileRef: CourseFileRefDTO, contextKey: String) {
         guard !previewingFileIDs.contains(fileRef.id) else {
             return
         }
@@ -3926,7 +3231,7 @@ struct ContentView: View {
         }
     }
 
-    private func makeDownloadURL(for fileRef: CourseFileRefDTO) throws -> URL {
+    func makeDownloadURL(for fileRef: CourseFileRefDTO) throws -> URL {
         let fileManager = FileManager.default
         let baseName = sanitizedFilename(nonEmpty(fileRef.name) ?? "datei-\(fileRef.id)")
 
@@ -3943,7 +3248,7 @@ struct ContentView: View {
         }
     }
 
-    private func makeQuickLookURL(for fileRef: CourseFileRefDTO) throws -> URL {
+    func makeQuickLookURL(for fileRef: CourseFileRefDTO) throws -> URL {
         let fileManager = FileManager.default
         let previewDirectory = fileManager.temporaryDirectory.appendingPathComponent("StudipSyncQuickLook", isDirectory: true)
         try fileManager.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
@@ -3953,7 +3258,7 @@ struct ContentView: View {
         return previewDirectory.appendingPathComponent(previewName, isDirectory: false)
     }
 
-    private func quickLookSheet(for previewFile: QuickLookPreviewFile) -> some View {
+    func quickLookSheet(for previewFile: QuickLookPreviewFile) -> some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -3987,7 +3292,7 @@ struct ContentView: View {
         }
     }
 
-    private func uniqueFileURL(in directory: URL, preferredName: String) -> URL {
+    func uniqueFileURL(in directory: URL, preferredName: String) -> URL {
         let fileManager = FileManager.default
         let cleanName = sanitizedFilename(preferredName)
         let baseURL = directory.appendingPathComponent(cleanName)
@@ -4009,14 +3314,14 @@ struct ContentView: View {
         }
     }
 
-    private func sanitizedFilename(_ raw: String) -> String {
+    func sanitizedFilename(_ raw: String) -> String {
         let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
         let parts = raw.components(separatedBy: invalid)
         let joined = parts.joined(separator: "_").trimmingCharacters(in: .whitespacesAndNewlines)
         return joined.isEmpty ? "datei" : joined
     }
 
-    private func scheduleTimeLine(for entry: ScheduleEntryDTO) -> String {
+    func scheduleTimeLine(for entry: ScheduleEntryDTO) -> String {
         let startDate = parseAPIDate(entry.start)
         let endDate = parseAPIDate(entry.end)
 
@@ -4032,7 +3337,7 @@ struct ContentView: View {
         return "Keine Zeitangabe"
     }
 
-    private func eventTimeLine(for event: EventDTO) -> String {
+    func eventTimeLine(for event: EventDTO) -> String {
         let startDate = parseAPIDate(event.start)
         let endDate = parseAPIDate(event.end)
 
@@ -4048,7 +3353,7 @@ struct ContentView: View {
         return "Keine Zeitangabe"
     }
 
-    private func deduplicatedEvents(_ events: [EventDTO]) -> [EventDTO] {
+    func deduplicatedEvents(_ events: [EventDTO]) -> [EventDTO] {
         var seen: Set<String> = []
         var deduped: [EventDTO] = []
         deduped.reserveCapacity(events.count)
@@ -4062,7 +3367,7 @@ struct ContentView: View {
         return deduped
     }
 
-    private func filterEventsToSemester(_ events: [EventDTO], semester: SemesterDTO) -> [EventDTO] {
+    func filterEventsToSemester(_ events: [EventDTO], semester: SemesterDTO) -> [EventDTO] {
         guard let semesterStart = semester.begin ?? semester.startOfLectures,
               let semesterEnd = semester.end ?? semester.endOfLectures else {
             return events
@@ -4076,7 +3381,7 @@ struct ContentView: View {
         }
     }
 
-    private func isScheduleEntryNow(_ entry: ScheduleEntryDTO) -> Bool {
+    func isScheduleEntryNow(_ entry: ScheduleEntryDTO) -> Bool {
         guard let startDate = parseAPIDate(entry.start), let endDate = parseAPIDate(entry.end) else {
             return false
         }
@@ -4084,7 +3389,7 @@ struct ContentView: View {
         return now >= startDate && now <= endDate
     }
 
-    private func chatPreviewText(_ thread: StudIPResourceRepository.CourseChatThread) -> String? {
+    func chatPreviewText(_ thread: StudIPResourceRepository.CourseChatThread) -> String? {
         if let content = nonEmpty(thread.previewText) {
             if content.contains("<"), content.contains(">") {
                 return plainText(fromHTML: content)
@@ -4094,7 +3399,7 @@ struct ContentView: View {
         return nil
     }
 
-    private func chatMessageText(_ message: BlubberPostingDTO) -> String {
+    func chatMessageText(_ message: BlubberPostingDTO) -> String {
         if let content = nonEmpty(message.content) {
             return content
         }
@@ -4104,7 +3409,7 @@ struct ContentView: View {
         return "(keine Nachricht)"
     }
 
-    private func chatMessageMetadataLine(_ message: BlubberPostingDTO) -> String {
+    func chatMessageMetadataLine(_ message: BlubberPostingDTO) -> String {
         var components: [String] = []
 
         if let discussionTime = parseAPIDate(message.discussionTime) {
@@ -4122,7 +3427,7 @@ struct ContentView: View {
         return components.isEmpty ? "Nachricht \(message.id)" : components.joined(separator: " • ")
     }
 
-    private func chatMetadataLine(_ thread: StudIPResourceRepository.CourseChatThread) -> String {
+    func chatMetadataLine(_ thread: StudIPResourceRepository.CourseChatThread) -> String {
         var components: [String] = []
 
         if let contextType = nonEmpty(thread.contextType) {
@@ -4146,7 +3451,7 @@ struct ContentView: View {
         return components.isEmpty ? "Keine Chat-Metadaten" : components.joined(separator: " • ")
     }
 
-    private func wikiPreviewText(_ page: StudIPResourceRepository.CourseWikiPage) -> String? {
+    func wikiPreviewText(_ page: StudIPResourceRepository.CourseWikiPage) -> String? {
         guard let content = nonEmpty(page.content) else {
             return nil
         }
@@ -4158,7 +3463,7 @@ struct ContentView: View {
         return nonEmpty(normalized)
     }
 
-    private func selectedWikiPage(
+    func selectedWikiPage(
         for courseID: String,
         pages: [StudIPResourceRepository.CourseWikiPage]
     ) -> StudIPResourceRepository.CourseWikiPage? {
@@ -4169,7 +3474,7 @@ struct ContentView: View {
         return pages.first
     }
 
-    private func wikiContentText(_ page: StudIPResourceRepository.CourseWikiPage) -> String {
+    func wikiContentText(_ page: StudIPResourceRepository.CourseWikiPage) -> String {
         guard let raw = nonEmpty(page.content) else {
             return "Kein Inhalt vorhanden."
         }
@@ -4192,7 +3497,7 @@ struct ContentView: View {
         return parsed.isEmpty ? normalized : parsed
     }
 
-    private func wikiMetadataLine(_ page: StudIPResourceRepository.CourseWikiPage) -> String {
+    func wikiMetadataLine(_ page: StudIPResourceRepository.CourseWikiPage) -> String {
         var components: [String] = []
 
         if let authorName = nonEmpty(page.authorName) {
@@ -4212,7 +3517,7 @@ struct ContentView: View {
         return components.isEmpty ? "Keine Wiki-Metadaten" : components.joined(separator: " • ")
     }
 
-    private func forumMetadataLine(_ category: StudIPResourceRepository.CourseForumCategory) -> String {
+    func forumMetadataLine(_ category: StudIPResourceRepository.CourseForumCategory) -> String {
         var components: [String] = []
 
         if let position = category.position {
@@ -4223,7 +3528,7 @@ struct ContentView: View {
         return components.joined(separator: " • ")
     }
 
-    private func forumEntryMetadataLine(_ entry: ForumEntryDTO) -> String {
+    func forumEntryMetadataLine(_ entry: ForumEntryDTO) -> String {
         var components: [String] = []
 
         if let authorName = displayName(forUserID: entry.authorID) {
@@ -4240,7 +3545,7 @@ struct ContentView: View {
         return components.joined(separator: " • ")
     }
 
-    private func newsMetadataLine(_ newsItem: NewsDTO) -> String {
+    func newsMetadataLine(_ newsItem: NewsDTO) -> String {
         var components: [String] = []
 
         if let updatedAt = parseAPIDate(newsItem.chdate) {
@@ -4256,7 +3561,7 @@ struct ContentView: View {
         return components.isEmpty ? "ID \(newsItem.id)" : components.joined(separator: " • ")
     }
 
-    private func parseAPIDate(_ raw: String?) -> Date? {
+    func parseAPIDate(_ raw: String?) -> Date? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -4272,7 +3577,7 @@ struct ContentView: View {
         return nil
     }
 
-    private func plainText(fromHTML html: String) -> String? {
+    func plainText(fromHTML html: String) -> String? {
         guard let data = html.data(using: .utf8) else { return nil }
         if let attributed = try? NSAttributedString(
             data: data,
@@ -4290,157 +3595,45 @@ struct ContentView: View {
         return nonEmpty(html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression))
     }
 
-    private static let fileDateFormatter: DateFormatter = {
+    static let fileDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter
     }()
 
-    private static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
+    static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    private static let apiISO8601: ISO8601DateFormatter = {
+    static let apiISO8601: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 
-    private static let scheduleDayFormatter: DateFormatter = {
+    static let scheduleDayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 
-    private static let scheduleTimeFormatter: DateFormatter = {
+    static let scheduleTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         return formatter
     }()
 
-    private static let eventDateTimeFormatter: DateFormatter = {
+    static let eventDateTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter
     }()
 
-    private static let participantRoleOrder = ["root", "admin", "dozent", "tutor", "autor"]
-
-    private func groupedParticipantsByRole(
-        _ participants: [StudIPResourceRepository.CourseParticipant]
-    ) -> [String: [StudIPResourceRepository.CourseParticipant]] {
-        var grouped: [String: [StudIPResourceRepository.CourseParticipant]] = [:]
-        grouped.reserveCapacity(Self.participantRoleOrder.count)
-
-        for participant in participants {
-            guard let roleKey = participantRoleKey(for: participant.permission) else {
-                continue
-            }
-            grouped[roleKey, default: []].append(participant)
-        }
-
-        for roleKey in grouped.keys {
-            grouped[roleKey]?.sort { lhs, rhs in
-                let lhsPosition = lhs.position ?? Int.max
-                let rhsPosition = rhs.position ?? Int.max
-                if lhsPosition != rhsPosition {
-                    return lhsPosition < rhsPosition
-                }
-                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-            }
-        }
-
-        return grouped
-    }
-
-    private func participantRoleKey(for permission: String?) -> String? {
-        guard let normalized = nonEmpty(permission)?.lowercased() else {
-            return nil
-        }
-        guard Self.participantRoleOrder.contains(normalized) else {
-            return nil
-        }
-        return normalized
-    }
-
-    private func participantRoleTitle(for roleKey: String) -> String {
-        switch roleKey {
-        case "root":
-            return "Root"
-        case "admin":
-            return "Admin"
-        case "dozent":
-            return "Dozent"
-        case "tutor":
-            return "Tutor"
-        case "autor":
-            return "Autor"
-        default:
-            return roleKey.capitalized
-        }
-    }
-
-    private func openMail(for participant: StudIPResourceRepository.CourseParticipant) {
-        guard let email = nonEmpty(participant.email) else {
-            return
-        }
-
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = email
-
-        guard let url = components.url else {
-            return
-        }
-
-        NSWorkspace.shared.open(url)
-    }
-
-    private func participantInfoSheet(for participant: StudIPResourceRepository.CourseParticipant) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(participant.displayName)
-                .font(.title3.weight(.semibold))
-
-            Divider()
-
-            participantInfoRow("User-ID", participant.userID)
-            participantInfoRow("E-Mail", nonEmpty(participant.email))
-            participantInfoRow("Rolle", nonEmpty(participant.permission))
-            participantInfoRow("Label", nonEmpty(participant.label))
-            participantInfoRow("Position", participant.position.map(String.init))
-            participantInfoRow("Gruppe", participant.group.map(String.init))
-            participantInfoRow("Erstellt", nonEmpty(participant.mkdate))
-
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-        .frame(minWidth: 380, minHeight: 260)
-    }
-
-    @ViewBuilder
-    private func participantInfoRow(_ label: String, _ value: String?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 90, alignment: .leading)
-
-            if let value {
-                Text(value)
-                    .font(.callout)
-                    .textSelection(.enabled)
-            } else {
-                Text("-")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
 }
 
 #if DEBUG
@@ -4456,7 +3649,7 @@ struct ContentView: View {
 }
 #endif
 
-private struct QuickLookPreviewContainer: NSViewRepresentable {
+struct QuickLookPreviewContainer: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> NSView {

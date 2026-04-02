@@ -668,8 +668,28 @@ struct UserDTO: Decodable, Hashable, Identifiable {
     let fullName: String?
     let givenName: String?
     let familyName: String?
+    let namePrefix: String?
+    let nameSuffix: String?
+    let permission: String?
     let email: String?
+    let authPlugin: String?
+    let locked: Bool?
+    let lockComment: String?
+    let visible: Bool?
+    let matriculationNumber: String?
+    let gender: String?
+    let preferredLanguage: String?
+    let mkdate: String?
+    let chdate: String?
     let phone: String?
+    let cellphone: String?
+    let address: String?
+    let homepage: String?
+    let hobby: String?
+    let cv: String?
+    let publication: String?
+    let focus: String?
+    let motto: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -684,10 +704,32 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         case familyName
         case givenNameDashed = "given-name"
         case familyNameDashed = "family-name"
+        case namePrefix
+        case nameSuffix
+        case namePrefixDashed = "name-prefix"
+        case nameSuffixDashed = "name-suffix"
+        case permission
         case email
         case mail
+        case authPlugin = "auth-plugin"
+        case locked
+        case lockComment = "lock-comment"
+        case visible
+        case matriculationNumber = "matriculation-number"
+        case gender
+        case preferredLanguage = "preferred-language"
+        case mkdate
+        case chdate
         case phone
         case telephone
+        case cellphone
+        case address
+        case homepage
+        case hobby
+        case cv
+        case publication
+        case focus
+        case motto
         case attributes
         case links
     }
@@ -705,10 +747,32 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         case familyName
         case givenNameDashed = "given-name"
         case familyNameDashed = "family-name"
+        case namePrefix
+        case nameSuffix
+        case namePrefixDashed = "name-prefix"
+        case nameSuffixDashed = "name-suffix"
+        case permission
         case email
         case mail
+        case authPlugin = "auth-plugin"
+        case locked
+        case lockComment = "lock-comment"
+        case visible
+        case matriculationNumber = "matriculation-number"
+        case gender
+        case preferredLanguage = "preferred-language"
+        case mkdate
+        case chdate
         case phone
         case telephone
+        case cellphone
+        case address
+        case homepage
+        case hobby
+        case cv
+        case publication
+        case focus
+        case motto
     }
 
     enum LinksCodingKeys: String, CodingKey {
@@ -763,15 +827,79 @@ struct UserDTO: Decodable, Hashable, Identifiable {
             ?? attributes?.decodeNonEmptyString(forKey: .familyName)
             ?? attributes?.decodeNonEmptyString(forKey: .familyNameDashed)
 
+        namePrefix = container.decodeNonEmptyString(forKey: .namePrefix)
+            ?? container.decodeNonEmptyString(forKey: .namePrefixDashed)
+            ?? attributes?.decodeNonEmptyString(forKey: .namePrefix)
+            ?? attributes?.decodeNonEmptyString(forKey: .namePrefixDashed)
+
+        nameSuffix = container.decodeNonEmptyString(forKey: .nameSuffix)
+            ?? container.decodeNonEmptyString(forKey: .nameSuffixDashed)
+            ?? attributes?.decodeNonEmptyString(forKey: .nameSuffix)
+            ?? attributes?.decodeNonEmptyString(forKey: .nameSuffixDashed)
+
+        permission = container.decodeNonEmptyString(forKey: .permission)
+            ?? attributes?.decodeNonEmptyString(forKey: .permission)
+
         email = container.decodeNonEmptyString(forKey: .email)
             ?? container.decodeNonEmptyString(forKey: .mail)
             ?? attributes?.decodeNonEmptyString(forKey: .email)
             ?? attributes?.decodeNonEmptyString(forKey: .mail)
 
+        authPlugin = container.decodeNonEmptyString(forKey: .authPlugin)
+            ?? attributes?.decodeNonEmptyString(forKey: .authPlugin)
+
+        locked = container.decodeBoolLossy(forKey: .locked)
+            ?? attributes?.decodeBoolLossy(forKey: .locked)
+
+        lockComment = container.decodeNonEmptyString(forKey: .lockComment)
+            ?? attributes?.decodeNonEmptyString(forKey: .lockComment)
+
+        visible = container.decodeBoolLossy(forKey: .visible)
+            ?? attributes?.decodeBoolLossy(forKey: .visible)
+
+        matriculationNumber = container.decodeNonEmptyString(forKey: .matriculationNumber)
+            ?? attributes?.decodeNonEmptyString(forKey: .matriculationNumber)
+
+        gender = container.decodeNonEmptyString(forKey: .gender)
+            ?? attributes?.decodeNonEmptyString(forKey: .gender)
+
+        preferredLanguage = container.decodeNonEmptyString(forKey: .preferredLanguage)
+            ?? attributes?.decodeNonEmptyString(forKey: .preferredLanguage)
+
+        mkdate = container.decodeNonEmptyString(forKey: .mkdate)
+            ?? attributes?.decodeNonEmptyString(forKey: .mkdate)
+
+        chdate = container.decodeNonEmptyString(forKey: .chdate)
+            ?? attributes?.decodeNonEmptyString(forKey: .chdate)
+
         phone = container.decodeNonEmptyString(forKey: .phone)
             ?? container.decodeNonEmptyString(forKey: .telephone)
             ?? attributes?.decodeNonEmptyString(forKey: .phone)
             ?? attributes?.decodeNonEmptyString(forKey: .telephone)
+
+        cellphone = container.decodeNonEmptyString(forKey: .cellphone)
+            ?? attributes?.decodeNonEmptyString(forKey: .cellphone)
+
+        address = container.decodeNonEmptyString(forKey: .address)
+            ?? attributes?.decodeNonEmptyString(forKey: .address)
+
+        homepage = container.decodeNonEmptyString(forKey: .homepage)
+            ?? attributes?.decodeNonEmptyString(forKey: .homepage)
+
+        hobby = container.decodeNonEmptyString(forKey: .hobby)
+            ?? attributes?.decodeNonEmptyString(forKey: .hobby)
+
+        cv = container.decodeNonEmptyString(forKey: .cv)
+            ?? attributes?.decodeNonEmptyString(forKey: .cv)
+
+        publication = container.decodeNonEmptyString(forKey: .publication)
+            ?? attributes?.decodeNonEmptyString(forKey: .publication)
+
+        focus = container.decodeNonEmptyString(forKey: .focus)
+            ?? attributes?.decodeNonEmptyString(forKey: .focus)
+
+        motto = container.decodeNonEmptyString(forKey: .motto)
+            ?? attributes?.decodeNonEmptyString(forKey: .motto)
     }
 
     var preferredDisplayName: String? {
@@ -782,7 +910,7 @@ struct UserDTO: Decodable, Hashable, Identifiable {
             return fullName
         }
 
-        let composedName = [givenName, familyName]
+        let composedName = [namePrefix, givenName, familyName, nameSuffix]
             .compactMap { value -> String? in
                 guard let value else { return nil }
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -795,6 +923,101 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         }
 
         return username
+    }
+}
+
+struct InstituteDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let title: String?
+    let name: String?
+    let shortName: String?
+    let description: String?
+    let email: String?
+    let phone: String?
+    let address: String?
+    let homepage: String?
+    let mkdate: String?
+    let chdate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case instituteID = "institute_id"
+        case title
+        case name
+        case shortName = "short-name"
+        case description
+        case email
+        case phone
+        case address
+        case homepage
+        case mkdate
+        case chdate
+        case attributes
+        case links
+    }
+
+    enum AttributesCodingKeys: String, CodingKey {
+        case id
+        case instituteID = "institute_id"
+        case title
+        case name
+        case shortName = "short-name"
+        case description
+        case email
+        case phone
+        case address
+        case homepage
+        case mkdate
+        case chdate
+    }
+
+    enum LinksCodingKeys: String, CodingKey {
+        case selfLink = "self"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attributes = try? container.nestedContainer(keyedBy: AttributesCodingKeys.self, forKey: .attributes)
+        let links = try? container.nestedContainer(keyedBy: LinksCodingKeys.self, forKey: .links)
+
+        let idFromLinks = try links?.decodeIfPresent(String.self, forKey: .selfLink).map(canonicalStudIPID)
+        let decodedID = container.decodeStringLossy(forKey: .id)
+            ?? container.decodeStringLossy(forKey: .instituteID)
+            ?? attributes?.decodeStringLossy(forKey: .id)
+            ?? attributes?.decodeStringLossy(forKey: .instituteID)
+            ?? idFromLinks
+
+        guard let decodedID, !decodedID.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Missing institute id")
+            )
+        }
+
+        id = canonicalStudIPID(decodedID)
+        title = container.decodeNonEmptyString(forKey: .title)
+            ?? attributes?.decodeNonEmptyString(forKey: .title)
+        name = container.decodeNonEmptyString(forKey: .name)
+            ?? attributes?.decodeNonEmptyString(forKey: .name)
+        shortName = container.decodeNonEmptyString(forKey: .shortName)
+            ?? attributes?.decodeNonEmptyString(forKey: .shortName)
+        description = container.decodeNonEmptyString(forKey: .description)
+            ?? attributes?.decodeNonEmptyString(forKey: .description)
+        email = container.decodeNonEmptyString(forKey: .email)
+            ?? attributes?.decodeNonEmptyString(forKey: .email)
+        phone = container.decodeNonEmptyString(forKey: .phone)
+            ?? attributes?.decodeNonEmptyString(forKey: .phone)
+        address = container.decodeNonEmptyString(forKey: .address)
+            ?? attributes?.decodeNonEmptyString(forKey: .address)
+        homepage = container.decodeNonEmptyString(forKey: .homepage)
+            ?? attributes?.decodeNonEmptyString(forKey: .homepage)
+        mkdate = container.decodeNonEmptyString(forKey: .mkdate)
+            ?? attributes?.decodeNonEmptyString(forKey: .mkdate)
+        chdate = container.decodeNonEmptyString(forKey: .chdate)
+            ?? attributes?.decodeNonEmptyString(forKey: .chdate)
+    }
+
+    var displayName: String {
+        title ?? name ?? shortName ?? "Einrichtung \(id)"
     }
 }
 

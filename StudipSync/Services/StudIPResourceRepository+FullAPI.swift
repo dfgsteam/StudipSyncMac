@@ -6,12 +6,14 @@ extension StudIPResourceRepository {
     func fetchCoursesCollection(
         semesterID: String? = nil,
         userID: String? = nil,
+        search: String? = nil,
         offset: Int? = nil,
         limit: Int? = nil
     ) async throws -> [CourseDTO] {
         try await coursesAPI().fetchCoursesCollection(
             semesterID: semesterID,
             userID: userID,
+            search: search,
             offset: offset,
             limit: limit
         )
@@ -29,6 +31,10 @@ extension StudIPResourceRepository {
             offset: offset,
             limit: limit
         )
+    }
+
+    func enrollCurrentUser(courseID: String) async throws {
+        try await coursesAPI().enrollCurrentUser(courseID: courseID)
     }
 
     // MARK: - Files
@@ -307,6 +313,10 @@ extension StudIPResourceRepository {
         try await users().fetchMe()
     }
 
+    func fetchMeRawJSON() async throws -> String {
+        try await users().fetchMeRawJSON()
+    }
+
     func fetchUser(id: String) async throws -> UserDTO {
         try await users().fetchUser(id: id)
     }
@@ -317,5 +327,51 @@ extension StudIPResourceRepository {
 
     func fetchInstituteMemberships(userID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [InstituteMembershipDTO] {
         try await users().fetchInstituteMemberships(userID: userID, offset: offset, limit: limit)
+    }
+
+    // MARK: - Institutes
+
+    func fetchInstitutes(offset: Int = 0, limit: Int = 200, search: String? = nil) async throws -> [InstituteDTO] {
+        do {
+            return try await institutes().fetchInstitutes(offset: offset, limit: limit, search: search)
+        } catch {
+            if let search, !search.isEmpty {
+                let all = try await institutes().fetchInstitutes(offset: offset, limit: limit, search: nil)
+                let normalizedSearch = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !normalizedSearch.isEmpty else { return all }
+                return all.filter { institute in
+                    let haystack = [
+                        institute.displayName,
+                        institute.shortName,
+                        institute.description,
+                        institute.email,
+                        institute.address
+                    ]
+                        .compactMap { $0?.lowercased() }
+                        .joined(separator: " ")
+                    return haystack.contains(normalizedSearch)
+                }
+            }
+            throw error
+        }
+    }
+
+    func fetchInstitute(id: String) async throws -> InstituteDTO {
+        try await institutes().fetchInstitute(id: id)
+    }
+
+    func fetchInstituteCourses(instituteID: String, semesterID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [CourseDTO] {
+        let normalizedInstituteID = canonicalStudIPID(instituteID)
+        let semesterCourses = try await fetchCoursesCollection(
+            semesterID: semesterID,
+            userID: nil,
+            offset: offset,
+            limit: limit
+        )
+
+        return semesterCourses.filter { course in
+            guard let instituteID = course.instituteID else { return false }
+            return canonicalStudIPID(instituteID) == normalizedInstituteID
+        }
     }
 }
