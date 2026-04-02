@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 import SwiftUI
 
 struct ContentView: View {
@@ -40,6 +41,12 @@ struct ContentView: View {
         static let forum = CourseDetailSection(id: "forum", title: "Forum", systemImage: "list.bullet.rectangle")
     }
 
+    private struct QuickLookPreviewFile: Identifiable {
+        let id: String
+        let title: String
+        let url: URL
+    }
+
     let statusController: MenuBarStatusController
     let syncScheduler: SyncScheduler
     let semesterSelectionStore: SemesterSelectionStore
@@ -60,6 +67,9 @@ struct ContentView: View {
     @State private var semesterScheduleErrorsBySemesterID: [String: String] = [:]
     @State private var loadingSemesterScheduleIDs: Set<String> = []
     @State private var semesterScheduleLoadedAtBySemesterID: [String: Date] = [:]
+    @State private var coursesBySemesterID: [String: [CourseDTO]] = [:]
+    @State private var prefetchingSemesterCourseIDs: Set<String> = []
+    @State private var coursePrefetchErrorsBySemesterID: [String: String] = [:]
     @State private var courses: [CourseDTO] = []
     @State private var isLoadingCourses = false
     @State private var isLoadingCourseDetail = false
@@ -71,6 +81,9 @@ struct ContentView: View {
     @State private var fileFolderPathByCourseID: [String: [FolderDTO]] = [:]
     @State private var downloadingFileIDs: Set<String> = []
     @State private var fileDownloadErrorsByFileID: [String: String] = [:]
+    @State private var previewingFileIDs: Set<String> = []
+    @State private var filePreviewErrorsByFileID: [String: String] = [:]
+    @State private var selectedQuickLookFile: QuickLookPreviewFile?
     @State private var isLoadingFiles = false
     @State private var chatsByCourseID: [String: [StudIPResourceRepository.CourseChatThread]] = [:]
     @State private var chatErrorsByCourseID: [String: String] = [:]
@@ -104,6 +117,7 @@ struct ContentView: View {
     @State private var forumRepliesByEntryID: [String: [ForumEntryDTO]] = [:]
     @State private var forumReplyErrorsByEntryID: [String: String] = [:]
     @State private var loadingForumEntryIDs: Set<String> = []
+    @State private var prefetchingCourseIDs: Set<String> = []
     @State private var selectedParticipantForInfo: StudIPResourceRepository.CourseParticipant?
 
     init(
@@ -186,6 +200,8 @@ struct ContentView: View {
         }
         .task(id: semesterIDsSignature) {
             selectFirstSemesterIfNeeded()
+            pruneCourseOverviewCacheToKnownSemesters()
+            await prefetchCourseOverviewsForLoadedSemesters()
         }
         .task(id: startScheduleTaskID) {
             await loadStartScheduleIfNeeded()
@@ -195,6 +211,9 @@ struct ContentView: View {
         }
         .sheet(item: $selectedParticipantForInfo) { participant in
             participantInfoSheet(for: participant)
+        }
+        .sheet(item: $selectedQuickLookFile) { previewFile in
+            quickLookSheet(for: previewFile)
         }
     }
 
@@ -212,12 +231,7 @@ struct ContentView: View {
                 } label: {
                     Label(page.title, systemImage: page.systemImage)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(activeRowForeground(isActive: isSelectedMenuPage(page)))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(activeRowBackground(isActive: isSelectedMenuPage(page)))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
                 }
                 .buttonStyle(.plain)
             }
@@ -288,11 +302,7 @@ struct ContentView: View {
                     Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
                 }
-                .foregroundStyle(activeRowForeground(isActive: isSelectedSemester(semester.id)))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(activeRowBackground(isActive: isSelectedSemester(semester.id)))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
                 .contentShape(Rectangle())
                 .onTapGesture {
                     selectedSemesterID = semester.id
@@ -483,24 +493,22 @@ struct ContentView: View {
         VStack(spacing: 0) {
             detailHeader
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let selectedCourse = selectedCourse {
-                        courseDetailCard(for: selectedCourse)
-                        if isLoadingCourseDetail {
-                            ProgressView("Lade Kursdetail ...")
-                                .controlSize(.small)
-                        }
-                    } else if let selectedSemester {
-                        semesterStatusPlaceholder(for: selectedSemester)
-                    } else {
-                        Text("Waehle links ein Semester aus.")
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                if let selectedCourse = selectedCourse {
+                    courseDetailCard(for: selectedCourse)
+                    if isLoadingCourseDetail {
+                        ProgressView("Lade Kursdetail ...")
+                            .controlSize(.small)
                     }
+                } else if let selectedSemester {
+                    semesterStatusPlaceholder(for: selectedSemester)
+                } else {
+                    Text("Waehle links ein Semester aus.")
+                        .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(24)
             .background(Color(nsColor: .textBackgroundColor))
 
             Divider()
@@ -799,10 +807,55 @@ struct ContentView: View {
         isActive ? Color.accentColor : Color.primary
     }
 
+    private struct SidebarSelectionModifier: ViewModifier {
+        let isActive: Bool
+
+        func body(content: Content) -> some View {
+            content
+                .foregroundStyle(isActive ? Color.accentColor : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(isActive ? Color.accentColor.opacity(0.14) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
     private func selectFirstSemesterIfNeeded() {
         guard selectedSemesterID == nil else { return }
         guard let firstSemester = semesterViewModel.semesters.first else { return }
         selectedSemesterID = firstSemester.id
+    }
+
+    private func pruneCourseOverviewCacheToKnownSemesters() {
+        let knownSemesterIDs = Set(semesterViewModel.semesters.map(\.id))
+        coursesBySemesterID = coursesBySemesterID.filter { knownSemesterIDs.contains($0.key) }
+        coursePrefetchErrorsBySemesterID = coursePrefetchErrorsBySemesterID.filter { knownSemesterIDs.contains($0.key) }
+        prefetchingSemesterCourseIDs = prefetchingSemesterCourseIDs.intersection(knownSemesterIDs)
+    }
+
+    private func prefetchCourseOverviewsForLoadedSemesters() async {
+        guard !semesterViewModel.semesters.isEmpty else { return }
+        for semester in semesterViewModel.semesters {
+            await prefetchCourseOverview(for: semester.id)
+        }
+    }
+
+    private func prefetchCourseOverview(for semesterID: String) async {
+        guard coursesBySemesterID[semesterID] == nil else { return }
+        guard !prefetchingSemesterCourseIDs.contains(semesterID) else { return }
+
+        prefetchingSemesterCourseIDs.insert(semesterID)
+        defer { prefetchingSemesterCourseIDs.remove(semesterID) }
+
+        do {
+            let fetched = try await repository.fetchCourses(for: semesterID)
+            let sorted = sortCoursesForDisplay(fetched)
+            coursesBySemesterID[semesterID] = sorted
+            coursePrefetchErrorsBySemesterID[semesterID] = nil
+        } catch {
+            coursePrefetchErrorsBySemesterID[semesterID] = "Fehler beim Vorladen der Kurse: \(error.localizedDescription)"
+        }
     }
 
     private func loadCoursesForSelectedSemester() async {
@@ -815,17 +868,28 @@ struct ContentView: View {
 
         isLoadingCourses = true
         selectedCourseID = nil
+        defer { isLoadingCourses = false }
+
+        if let cached = coursesBySemesterID[selectedSemesterID] {
+            courses = cached
+            courseStatusMessage = cached.isEmpty ? "Keine Kurse gefunden" : "\(cached.count) Kurse geladen"
+            return
+        }
 
         do {
             let fetched = try await repository.fetchCourses(for: selectedSemesterID)
-            courses = fetched.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            let sorted = sortCoursesForDisplay(fetched)
+            coursesBySemesterID[selectedSemesterID] = sorted
+            courses = sorted
             courseStatusMessage = fetched.isEmpty ? "Keine Kurse gefunden" : "\(fetched.count) Kurse geladen"
         } catch {
             courses = []
             courseStatusMessage = "Fehler beim Laden der Kurse: \(error.localizedDescription)"
         }
+    }
 
-        isLoadingCourses = false
+    private func sortCoursesForDisplay(_ courses: [CourseDTO]) -> [CourseDTO] {
+        courses.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     private func loadStartScheduleIfNeeded() async {
@@ -978,8 +1042,258 @@ struct ContentView: View {
                 selectedChatThreadIDByCourseID[selectedCourseID] = cachedThreads.first?.id
             }
             await preloadWikiAvailability(for: selectedCourseID)
+            Task(priority: .utility) {
+                await prefetchAllTabContentForCourse(selectedCourseID)
+            }
         } catch {
             AppLogger.error("Failed to load course detail: \(error.localizedDescription)")
+        }
+    }
+
+    private func prefetchAllTabContentForCourse(_ courseID: String) async {
+        guard !prefetchingCourseIDs.contains(courseID) else {
+            return
+        }
+        prefetchingCourseIDs.insert(courseID)
+        defer { prefetchingCourseIDs.remove(courseID) }
+
+        async let newsTask: Void = prefetchNewsContent(for: courseID)
+        async let filesTask: Void = prefetchRootFilesContent(for: courseID)
+        async let chatTask: Void = prefetchChatContent(for: courseID)
+        async let wikiTask: Void = prefetchWikiContent(for: courseID)
+        async let participantTask: Void = prefetchParticipantContent(for: courseID)
+        async let forumTask: Void = prefetchForumContent(for: courseID)
+
+        _ = await (newsTask, filesTask, chatTask, wikiTask, participantTask, forumTask)
+    }
+
+    private func prefetchNewsContent(for courseID: String) async {
+        if courseNewsByCourseID[courseID] == nil {
+            do {
+                let newsItems = try await repository.fetchCourseNews(courseID: courseID, offset: 0, limit: 100)
+                let sorted = newsItems.sorted { lhs, rhs in
+                    let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
+                    let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
+                    if lhsDate != rhsDate {
+                        return lhsDate > rhsDate
+                    }
+                    let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+                    let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+                    return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+                }
+
+                courseNewsByCourseID[courseID] = sorted
+                if let selectedID = selectedNewsIDByCourseID[courseID],
+                   sorted.contains(where: { $0.id == selectedID }) {
+                    selectedNewsIDByCourseID[courseID] = selectedID
+                } else {
+                    selectedNewsIDByCourseID[courseID] = sorted.first?.id
+                }
+            } catch {
+                courseNewsErrorsByCourseID[courseID] = "Fehler beim Laden der Veranstaltungsnews: \(error.localizedDescription)"
+            }
+        }
+
+        guard let newsID = selectedNewsIDByCourseID[courseID] else {
+            return
+        }
+        guard newsCommentsByNewsID[newsID] == nil else {
+            return
+        }
+
+        do {
+            let comments = try await repository.fetchNewsComments(newsID: newsID, offset: 0, limit: 1000)
+            let sorted = comments.sorted { lhs, rhs in
+                lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
+            }
+            newsCommentsByNewsID[newsID] = sorted
+        } catch {
+            newsCommentErrorsByNewsID[newsID] = "Fehler beim Laden der News-Kommentare: \(error.localizedDescription)"
+        }
+    }
+
+    private func prefetchRootFilesContent(for courseID: String) async {
+        let contextKey = fileContextKey(courseID: courseID, folderID: nil)
+        if filesByContextKey[contextKey] != nil, foldersByContextKey[contextKey] != nil {
+            return
+        }
+
+        do {
+            async let loadedFolders = repository.fetchFolders(scope: .course(courseID), offset: 0, limit: 1000)
+            async let loadedFiles = repository.fetchFileRefs(scope: .course(courseID), offset: 0, limit: 1000)
+            let (folders, files) = try await (loadedFolders, loadedFiles)
+
+            let sortedFolders = folders.sorted { lhs, rhs in
+                let lhsName = nonEmpty(lhs.name) ?? lhs.id
+                let rhsName = nonEmpty(rhs.name) ?? rhs.id
+                return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+            }
+            let sortedFiles = files.sorted { lhs, rhs in
+                let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
+                let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
+                if lhsDate != rhsDate {
+                    return lhsDate > rhsDate
+                }
+                let lhsName = nonEmpty(lhs.name) ?? lhs.id
+                let rhsName = nonEmpty(rhs.name) ?? rhs.id
+                return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+            }
+
+            foldersByContextKey[contextKey] = sortedFolders
+            filesByContextKey[contextKey] = sortedFiles
+        } catch {
+            fileErrorsByContextKey[contextKey] = "Fehler beim Laden der Dateien/Ordner: \(error.localizedDescription)"
+        }
+    }
+
+    private func prefetchChatContent(for courseID: String) async {
+        if chatsByCourseID[courseID] == nil {
+            do {
+                let threads = try await repository.fetchCourseChatThreads(courseID: courseID)
+                chatsByCourseID[courseID] = threads
+                if let currentSelection = selectedChatThreadIDByCourseID[courseID],
+                   threads.contains(where: { $0.id == currentSelection }) {
+                    selectedChatThreadIDByCourseID[courseID] = currentSelection
+                } else {
+                    selectedChatThreadIDByCourseID[courseID] = threads.first?.id
+                }
+            } catch {
+                chatErrorsByCourseID[courseID] = "Fehler beim Laden der Chat-Threads: \(error.localizedDescription)"
+            }
+        }
+
+        guard let threadID = selectedChatThreadIDByCourseID[courseID] else {
+            return
+        }
+        guard chatMessagesByThreadID[threadID] == nil else {
+            return
+        }
+
+        do {
+            let postings = try await repository.fetchBlubberThreadComments(threadID: threadID, offset: 0, limit: 1000)
+            let sorted = postings.sorted { lhs, rhs in
+                let lhsDate = parseAPIDate(lhs.discussionTime) ?? parseAPIDate(lhs.mkdate) ?? parseAPIDate(lhs.chdate) ?? .distantPast
+                let rhsDate = parseAPIDate(rhs.discussionTime) ?? parseAPIDate(rhs.mkdate) ?? parseAPIDate(rhs.chdate) ?? .distantPast
+                if lhsDate != rhsDate {
+                    return lhsDate < rhsDate
+                }
+                return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
+            }
+            chatMessagesByThreadID[threadID] = sorted
+        } catch {
+            chatMessageErrorsByThreadID[threadID] = "Fehler beim Laden des Chatfensters: \(error.localizedDescription)"
+        }
+    }
+
+    private func prefetchWikiContent(for courseID: String) async {
+        guard wikisByCourseID[courseID] == nil else {
+            return
+        }
+
+        do {
+            let pages = try await repository.fetchCourseWikiPages(courseID: courseID)
+            wikisByCourseID[courseID] = pages
+            if let currentSelection = selectedWikiPageIDByCourseID[courseID],
+               pages.contains(where: { $0.id == currentSelection }) {
+                selectedWikiPageIDByCourseID[courseID] = currentSelection
+            } else {
+                selectedWikiPageIDByCourseID[courseID] = pages.first?.id
+            }
+        } catch {
+            wikiErrorsByCourseID[courseID] = "Fehler beim Laden der Wiki-Seiten: \(error.localizedDescription)"
+        }
+    }
+
+    private func prefetchParticipantContent(for courseID: String) async {
+        guard participantsByCourseID[courseID] == nil else {
+            return
+        }
+
+        do {
+            let participants = try await repository.fetchCourseParticipants(courseID: courseID)
+            participantsByCourseID[courseID] = participants
+        } catch {
+            participantErrorsByCourseID[courseID] = "Fehler beim Laden der Teilnehmer: \(error.localizedDescription)"
+        }
+    }
+
+    private func prefetchForumContent(for courseID: String) async {
+        if forumsByCourseID[courseID] == nil {
+            do {
+                let categories = try await repository.fetchCourseForumCategories(courseID: courseID, offset: 0, limit: 1000)
+                let sortedCategories = categories.sorted { lhs, rhs in
+                    let lhsPosition = lhs.position ?? Int.max
+                    let rhsPosition = rhs.position ?? Int.max
+                    if lhsPosition != rhsPosition {
+                        return lhsPosition < rhsPosition
+                    }
+                    let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+                    let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+                    return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+                }
+
+                forumsByCourseID[courseID] = sortedCategories
+                if let selectedID = selectedForumCategoryIDByCourseID[courseID],
+                   sortedCategories.contains(where: { $0.id == selectedID }) {
+                    selectedForumCategoryIDByCourseID[courseID] = selectedID
+                } else {
+                    selectedForumCategoryIDByCourseID[courseID] = sortedCategories.first?.id
+                }
+            } catch {
+                forumErrorsByCourseID[courseID] = "Fehler beim Laden der Forum-Kategorien: \(error.localizedDescription)"
+            }
+        }
+
+        guard let categoryID = selectedForumCategoryIDByCourseID[courseID] else {
+            return
+        }
+        if forumEntriesByCategoryID[categoryID] == nil {
+            do {
+                let entries = try await repository.fetchForumCategoryEntries(categoryID: categoryID, offset: 0, limit: 1000)
+                let sortedEntries = entries.sorted { lhs, rhs in
+                    let lhsArea = lhs.area ?? Int.max
+                    let rhsArea = rhs.area ?? Int.max
+                    if lhsArea != rhsArea {
+                        return lhsArea < rhsArea
+                    }
+                    let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+                    let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+                    return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+                }
+                forumEntriesByCategoryID[categoryID] = sortedEntries
+                if let selectedID = selectedForumEntryIDByCategoryID[categoryID],
+                   sortedEntries.contains(where: { $0.id == selectedID }) {
+                    selectedForumEntryIDByCategoryID[categoryID] = selectedID
+                } else {
+                    selectedForumEntryIDByCategoryID[categoryID] = sortedEntries.first?.id
+                }
+            } catch {
+                forumEntryErrorsByCategoryID[categoryID] = "Fehler beim Laden der Forum-Themen: \(error.localizedDescription)"
+            }
+        }
+
+        guard let entryID = selectedForumEntryIDByCategoryID[categoryID] else {
+            return
+        }
+        guard forumRepliesByEntryID[entryID] == nil else {
+            return
+        }
+
+        do {
+            let replies = try await repository.fetchForumEntryEntries(entryID: entryID, offset: 0, limit: 1000)
+            let sortedReplies = replies.sorted { lhs, rhs in
+                let lhsArea = lhs.area ?? Int.max
+                let rhsArea = rhs.area ?? Int.max
+                if lhsArea != rhsArea {
+                    return lhsArea < rhsArea
+                }
+                let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+                let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+            }
+            forumRepliesByEntryID[entryID] = sortedReplies
+        } catch {
+            forumReplyErrorsByEntryID[entryID] = "Fehler beim Laden der Forum-Antworten: \(error.localizedDescription)"
         }
     }
 
@@ -1007,16 +1321,24 @@ struct ContentView: View {
                     .font(.headline)
             }
 
-            newsDemoBlock(for: course)
+            if shouldShowNewsBlock(for: course.id) {
+                newsDemoBlock(for: course)
+            }
             courseSectionNavigation
 
             GroupBox {
-                courseDetailSectionContent(for: course, sectionID: selectedCourseDetailSectionID)
+                ScrollView {
+                    courseDetailSectionContent(for: course, sectionID: selectedCourseDetailSectionID)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } label: {
                 Text(sectionTitle(for: selectedCourseDetailSectionID))
                     .font(.headline)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func courseRow(_ course: CourseDTO) -> some View {
@@ -1043,6 +1365,9 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             selectedCourseID = course.id
+            Task(priority: .utility) {
+                await prefetchAllTabContentForCourse(course.id)
+            }
         }
     }
 
@@ -1075,12 +1400,9 @@ struct ContentView: View {
         switch sectionID {
         case CourseDetailSection.description.id:
             if let description = nonEmpty(course.description) {
-                ScrollView {
-                    Text(description)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(minHeight: 120, maxHeight: 220)
+                Text(description)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 emptySectionText("Keine Beschreibung vorhanden.")
             }
@@ -1194,15 +1516,12 @@ struct ContentView: View {
                     .controlSize(.small)
             } else if let newsItems = courseNewsByCourseID[course.id], !newsItems.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(newsItems) { item in
-                                newsRow(item, courseID: course.id)
-                            }
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(newsItems) { item in
+                            newsRow(item, courseID: course.id)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(minHeight: 80, maxHeight: 210)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     newsCommentsWindowBlock(for: course.id)
                 }
@@ -1220,6 +1539,19 @@ struct ContentView: View {
         .padding(12)
         .background(Color.secondary.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func shouldShowNewsBlock(for courseID: String) -> Bool {
+        if isLoadingCourseNews, courseNewsByCourseID[courseID] == nil {
+            return true
+        }
+        if let errorText = courseNewsErrorsByCourseID[courseID], nonEmpty(errorText) != nil {
+            return true
+        }
+        if let newsItems = courseNewsByCourseID[courseID] {
+            return !newsItems.isEmpty
+        }
+        return false
     }
 
     private func newsRow(_ newsItem: NewsDTO, courseID: String) -> some View {
@@ -1266,15 +1598,12 @@ struct ContentView: View {
                 ProgressView("Lade Kommentare ...")
                     .controlSize(.small)
             } else if let comments = newsCommentsByNewsID[selectedNewsID], !comments.isEmpty {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(comments) { comment in
-                            newsCommentRow(comment)
-                        }
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(comments) { comment in
+                        newsCommentRow(comment)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 90, maxHeight: 220)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(Color.secondary.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1393,15 +1722,24 @@ struct ContentView: View {
                 .controlSize(.small)
         } else if let categories = forumsByCourseID[course.id], !categories.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Kategorien", systemImage: "rectangle.stack.bubble.left")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(categories) { category in
                             forumCategoryRow(category, courseID: course.id)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 90, maxHeight: 200)
+                .padding(10)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
 
                 forumEntriesWindowBlock(for: course.id)
             }
@@ -1428,8 +1766,14 @@ struct ContentView: View {
         } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "text.bubble")
-                        .foregroundStyle(Color.accentColor)
+                    Circle()
+                        .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.2))
+                        .frame(width: 26, height: 26)
+                        .overlay {
+                            Image(systemName: "text.bubble")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        }
                         .padding(.top, 1)
 
                     Text(nonEmpty(category.title) ?? "Forum \(category.id)")
@@ -1444,9 +1788,10 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+            .background(isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -1460,7 +1805,10 @@ struct ContentView: View {
                     .controlSize(.small)
             } else if let entries = forumEntriesByCategoryID[selectedCategoryID], !entries.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Themen", systemImage: "text.bubble")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
                         LazyVStack(alignment: .leading, spacing: 8) {
                             ForEach(entries) { entry in
                                 forumEntryRow(entry, categoryID: selectedCategoryID)
@@ -1468,7 +1816,13 @@ struct ContentView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(minHeight: 90, maxHeight: 200)
+                    .padding(10)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    }
 
                     forumRepliesWindowBlock(categoryID: selectedCategoryID)
                 }
@@ -1517,9 +1871,10 @@ struct ContentView: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+            .background(isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -1532,18 +1887,24 @@ struct ContentView: View {
                 ProgressView("Lade Antworten ...")
                     .controlSize(.small)
             } else if let replies = forumRepliesByEntryID[selectedEntryID], !replies.isEmpty {
-                ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Antworten", systemImage: "bubble.left.and.bubble.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(replies) { reply in
                             forumReplyRow(reply)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 100, maxHeight: 220)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(Color.secondary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
             } else if let errorText = forumReplyErrorsByEntryID[selectedEntryID] {
                 Text(errorText)
                     .font(.footnote)
@@ -1562,30 +1923,38 @@ struct ContentView: View {
     }
 
     private func forumReplyRow(_ reply: ForumEntryDTO) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let content = nonEmpty(reply.content) {
-                let preview = content.contains("<") && content.contains(">")
-                    ? plainText(fromHTML: content)
-                    : content
-                Text(nonEmpty(preview) ?? "(leer)")
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .lineLimit(4)
-            } else {
-                Text("(leer)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+        let bubbleColor = Color.accentColor.opacity(0.11)
 
-            Text(forumEntryMetadataLine(reply))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+        return HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let content = nonEmpty(reply.content) {
+                    let preview = content.contains("<") && content.contains(">")
+                        ? plainText(fromHTML: content)
+                        : content
+                    Text(nonEmpty(preview) ?? "(leer)")
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .lineLimit(nil)
+                } else {
+                    Text("(leer)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(forumEntryMetadataLine(reply))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 680, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(bubbleColor)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            Spacer(minLength: 44)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1599,42 +1968,40 @@ struct ContentView: View {
             ProgressView("Lade Dateien ...")
                 .controlSize(.small)
         } else if hasContent {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    if let breadcrumb = folderBreadcrumbText(for: course.id) {
-                        HStack(spacing: 10) {
-                            Text(breadcrumb)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+            LazyVStack(alignment: .leading, spacing: 8) {
+                if let breadcrumb = folderBreadcrumbText(for: course.id) {
+                    HStack(spacing: 10) {
+                        Text(breadcrumb)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
 
-                            Spacer(minLength: 8)
+                        Spacer(minLength: 8)
 
-                            Button("Zurueck") {
-                                openParentFolder(for: course.id)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button("Wurzel") {
-                                openRootFolder(for: course.id)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                        Button("Zurueck") {
+                            openParentFolder(for: course.id)
                         }
-                    }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
 
-                    ForEach(folders) { folder in
-                        folderRow(folder, courseID: course.id)
-                    }
-
-                    ForEach(files) { fileRef in
-                        fileRow(fileRef, contextKey: contextKey)
+                        Button("Wurzel") {
+                            openRootFolder(for: course.id)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ForEach(folders) { folder in
+                    folderRow(folder, courseID: course.id)
+                }
+
+                ForEach(files) { fileRef in
+                    fileRow(fileRef, contextKey: contextKey)
+                }
             }
-            .frame(minHeight: 140, maxHeight: 300)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 140)
         } else if let errorText = fileErrorsByContextKey[contextKey] {
             Text(errorText)
                 .font(.footnote)
@@ -1686,39 +2053,68 @@ struct ContentView: View {
     }
 
     private func fileRow(_ fileRef: CourseFileRefDTO, contextKey: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: iconName(forMIMEType: fileRef.mimeType))
-                .font(.system(size: 18))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 24, height: 24)
-                .padding(.top, 2)
+        let canPreview = fileRef.isReadable ?? fileRef.isDownloadable ?? true
+        let canDownload = fileRef.isDownloadable ?? fileRef.isReadable ?? true
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(nonEmpty(fileRef.name) ?? "Datei \(fileRef.id)")
-                    .font(.body.weight(.medium))
-                    .lineLimit(2)
+        return HStack(alignment: .top, spacing: 10) {
+            Button {
+                previewFileViaApplePreview(fileRef, contextKey: contextKey)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: iconName(forMIMEType: fileRef.mimeType))
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 24, height: 24)
+                        .padding(.top, 2)
 
-                Text(fileMetadataLine(fileRef))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(nonEmpty(fileRef.name) ?? "Datei \(fileRef.id)")
+                            .font(.body.weight(.medium))
+                            .lineLimit(2)
 
-                if let description = nonEmpty(fileRef.description) {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        Text(fileMetadataLine(fileRef))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+
+                        if let description = nonEmpty(fileRef.description) {
+                            Text(description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+
+                        if let downloadError = fileDownloadErrorsByFileID[fileRef.id] {
+                            Text(downloadError)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                                .lineLimit(2)
+                        }
+
+                        if let previewError = filePreviewErrorsByFileID[fileRef.id] {
+                            Text(previewError)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
                 }
-
-                if let downloadError = fileDownloadErrorsByFileID[fileRef.id] {
-                    Text(downloadError)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .disabled(!canPreview || previewingFileIDs.contains(fileRef.id))
+            .help(canPreview ? "Apple Vorschau (Quick Look) anzeigen" : "Datei ist nicht lesbar")
 
-            Spacer(minLength: 8)
+            if previewingFileIDs.contains(fileRef.id) {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "eye")
+                    .foregroundStyle(.secondary)
+            }
 
             Button {
                 downloadFileViaAPI(fileRef, contextKey: contextKey)
@@ -1731,8 +2127,8 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .disabled(!(fileRef.isDownloadable ?? fileRef.isReadable ?? true) || downloadingFileIDs.contains(fileRef.id))
-            .help((fileRef.isDownloadable ?? fileRef.isReadable ?? true) ? "Datei ueber API herunterladen" : "Datei ist nicht downloadbar")
+            .disabled(!canDownload || downloadingFileIDs.contains(fileRef.id))
+            .help(canDownload ? "Datei ueber API herunterladen" : "Datei ist nicht downloadbar")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1747,7 +2143,10 @@ struct ContentView: View {
                 .controlSize(.small)
         } else if let threads = chatsByCourseID[course.id], !threads.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Unterhaltungen", systemImage: "list.bullet.bubble")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(threads) { thread in
                             chatRow(thread, courseID: course.id)
@@ -1755,7 +2154,13 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 100, maxHeight: 220)
+                .padding(10)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
 
                 chatWindowBlock(for: course.id)
             }
@@ -1779,8 +2184,14 @@ struct ContentView: View {
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: thread.isFollowed == true ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
-                        .foregroundStyle(Color.accentColor)
+                    Circle()
+                        .fill(isSelected ? Color.accentColor.opacity(0.24) : Color.secondary.opacity(0.2))
+                        .frame(width: 26, height: 26)
+                        .overlay {
+                            Image(systemName: thread.isFollowed == true ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        }
                         .padding(.top, 2)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -1820,9 +2231,10 @@ struct ContentView: View {
                     if thread.isFollowed == true { smallBadge("Abonniert") }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+            .background(isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -1835,18 +2247,24 @@ struct ContentView: View {
                 ProgressView("Lade Chatfenster ...")
                     .controlSize(.small)
             } else if let messages = chatMessagesByThreadID[threadID], !messages.isEmpty {
-                ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Nachrichten", systemImage: "bubble.left.and.text.bubble.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(messages) { message in
                             chatMessageRow(message)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 120, maxHeight: 260)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(Color.secondary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
             } else if let errorText = chatMessageErrorsByThreadID[threadID] {
                 Text(errorText)
                     .font(.footnote)
@@ -1865,21 +2283,35 @@ struct ContentView: View {
     }
 
     private func chatMessageRow(_ message: BlubberPostingDTO) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(chatMessageText(message))
-                .font(.callout)
-                .textSelection(.enabled)
+        let alignTrailing = abs(message.id.hashValue) % 4 == 0
+        let bubbleColor = alignTrailing ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.1)
 
-            Text(chatMessageMetadataLine(message))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        return HStack(alignment: .top, spacing: 0) {
+            if alignTrailing {
+                Spacer(minLength: 44)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(chatMessageText(message))
+                    .font(.callout)
+                    .textSelection(.enabled)
+
+                Text(chatMessageMetadataLine(message))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 680, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(bubbleColor)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            if !alignTrailing {
+                Spacer(minLength: 44)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
     }
 
     private func smallBadge(_ text: String) -> some View {
@@ -1898,15 +2330,13 @@ struct ContentView: View {
                 .controlSize(.small)
         } else if let pages = wikisByCourseID[course.id], !pages.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(pages) { page in
-                            wikiRow(page, courseID: course.id)
-                        }
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(pages) { page in
+                        wikiRow(page, courseID: course.id)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 100, maxHeight: 200)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 100)
 
                 wikiWindowBlock(for: course.id)
             }
@@ -1974,13 +2404,11 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    ScrollView {
-                        Text(wikiContentText(selectedPage))
-                            .font(.callout)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(minHeight: 120, maxHeight: 260)
+                    Text(wikiContentText(selectedPage))
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 120)
                     .padding(10)
                     .background(Color.secondary.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -2004,15 +2432,13 @@ struct ContentView: View {
             ProgressView("Lade Teilnehmer ...")
                 .controlSize(.small)
         } else if let participants = participantsByCourseID[course.id], !participants.isEmpty {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(participants) { participant in
-                        participantRow(participant)
-                    }
+            LazyVStack(alignment: .leading, spacing: 8) {
+                ForEach(participants) { participant in
+                    participantRow(participant)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minHeight: 140, maxHeight: 280)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 140)
         } else if let errorText = participantErrorsByCourseID[course.id] {
             Text(errorText)
                 .font(.footnote)
@@ -2771,6 +3197,39 @@ struct ContentView: View {
         }
     }
 
+    private func previewFileViaApplePreview(_ fileRef: CourseFileRefDTO, contextKey: String) {
+        guard !previewingFileIDs.contains(fileRef.id) else {
+            return
+        }
+        previewingFileIDs.insert(fileRef.id)
+        filePreviewErrorsByFileID[fileRef.id] = nil
+
+        Task {
+            do {
+                let data = try await repository.fetchFileContent(fileRefID: fileRef.id)
+                let targetURL = try makeQuickLookURL(for: fileRef)
+                try data.write(to: targetURL, options: [.atomic])
+
+                await MainActor.run {
+                    previewingFileIDs.remove(fileRef.id)
+                    selectedQuickLookFile = QuickLookPreviewFile(
+                        id: "\(fileRef.id)-\(targetURL.path)",
+                        title: nonEmpty(fileRef.name) ?? "Datei \(fileRef.id)",
+                        url: targetURL
+                    )
+                    filePreviewErrorsByFileID[fileRef.id] = nil
+                    fileErrorsByContextKey[contextKey] = nil
+                }
+            } catch {
+                await MainActor.run {
+                    previewingFileIDs.remove(fileRef.id)
+                    filePreviewErrorsByFileID[fileRef.id] = "Vorschau fehlgeschlagen."
+                    fileErrorsByContextKey[contextKey] = "Fehler bei der Vorschau: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     private func makeDownloadURL(for fileRef: CourseFileRefDTO) throws -> URL {
         let fileManager = FileManager.default
         let baseName = sanitizedFilename(nonEmpty(fileRef.name) ?? "datei-\(fileRef.id)")
@@ -2785,6 +3244,50 @@ struct ContentView: View {
             let fallbackDirectory = fileManager.temporaryDirectory
             try fileManager.createDirectory(at: fallbackDirectory, withIntermediateDirectories: true)
             return uniqueFileURL(in: fallbackDirectory, preferredName: baseName)
+        }
+    }
+
+    private func makeQuickLookURL(for fileRef: CourseFileRefDTO) throws -> URL {
+        let fileManager = FileManager.default
+        let previewDirectory = fileManager.temporaryDirectory.appendingPathComponent("StudipSyncQuickLook", isDirectory: true)
+        try fileManager.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+
+        let baseName = sanitizedFilename(nonEmpty(fileRef.name) ?? "datei-\(fileRef.id)")
+        let previewName = sanitizedFilename("\(fileRef.id)-\(baseName)")
+        return previewDirectory.appendingPathComponent(previewName, isDirectory: false)
+    }
+
+    private func quickLookSheet(for previewFile: QuickLookPreviewFile) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(previewFile.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(previewFile.url.lastPathComponent)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button("Im Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([previewFile.url])
+                }
+                .buttonStyle(.bordered)
+
+                Button("Extern oeffnen") {
+                    NSWorkspace.shared.open(previewFile.url)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.bar)
+
+            QuickLookPreviewContainer(url: previewFile.url)
+                .frame(minWidth: 760, minHeight: 520)
         }
     }
 
@@ -3218,3 +3721,23 @@ struct ContentView: View {
     )
 }
 #endif
+
+private struct QuickLookPreviewContainer: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> NSView {
+        if let view = QLPreviewView(frame: .zero, style: .normal) {
+            view.previewItem = url as NSURL
+            return view
+        }
+
+        let fallback = NSTextField(labelWithString: "Vorschau ist fuer diese Datei nicht verfuegbar.")
+        fallback.alignment = .center
+        fallback.textColor = .secondaryLabelColor
+        return fallback
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? QLPreviewView)?.previewItem = url as NSURL
+    }
+}
