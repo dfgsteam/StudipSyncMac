@@ -176,7 +176,41 @@ actor StudIPCourseRepository {
     private func normalizedCourseSearchFields(from fields: String?) -> String? {
         guard let fields else { return nil }
         let trimmed = fields.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty else { return nil }
+
+        let normalized = trimmed.lowercased()
+        let allowed: Set<String> = [
+            "all",
+            "title_lecturer_number",
+            "title",
+            "sub_title",
+            "lecturer",
+            "number",
+            "comment",
+            "scope"
+        ]
+
+        if allowed.contains(normalized) {
+            return normalized
+        }
+
+        let csvTokens = normalized
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if !csvTokens.isEmpty {
+            let tokenSet = Set(csvTokens)
+            if tokenSet == Set(["title", "lecturer", "number"]) {
+                return "title_lecturer_number"
+            }
+            if tokenSet.count == 1, let single = tokenSet.first, allowed.contains(single) {
+                return single
+            }
+        }
+
+        // Unknown token: omit fields filter to avoid server-side 400 errors.
+        return nil
     }
 
     private func filterCoursesLocally(_ courses: [CourseDTO], search: String, fields: String?) -> [CourseDTO] {
@@ -184,10 +218,20 @@ actor StudIPCourseRepository {
 
         let requestedFields: [String]
         if let fields {
-            requestedFields = fields
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-                .filter { !$0.isEmpty }
+            let normalizedFields = fields.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            switch normalizedFields {
+            case "title_lecturer_number":
+                requestedFields = ["title", "lecturer", "number"]
+            case "sub_title":
+                requestedFields = ["subtitle"]
+            case "all":
+                requestedFields = ["title", "lecturer", "number", "id", "subtitle", "description", "location", "comment", "scope"]
+            default:
+                requestedFields = normalizedFields
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                    .filter { !$0.isEmpty }
+            }
         } else {
             requestedFields = ["title", "lecturer", "number", "id", "subtitle", "description", "location"]
         }

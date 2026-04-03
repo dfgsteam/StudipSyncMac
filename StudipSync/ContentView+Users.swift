@@ -213,8 +213,6 @@ extension ContentView {
                 }
 
                 Spacer()
-
-                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)

@@ -125,7 +125,6 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)

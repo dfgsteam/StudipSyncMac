@@ -110,14 +110,15 @@ extension ContentView {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    var headerNavigationAndActions: some View {
-        let usesUserHistory = selectedSemesterID == nil
-            && selectedPage == .benutzer
-            && !userNavigationHistory.isEmpty
+    var shouldUseUserHistoryNavigation: Bool {
+        selectedSemesterID == nil && selectedPage == .benutzer && !userNavigationHistory.isEmpty
+    }
 
-        return HStack(spacing: 8) {
+    @ToolbarContentBuilder
+    var appToolbarActions: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
             Button {
-                if usesUserHistory {
+                if shouldUseUserHistoryNavigation {
                     navigateUserBackward()
                 } else {
                     goBackInSidebarNavigation()
@@ -125,13 +126,11 @@ extension ContentView {
             } label: {
                 Image(systemName: "chevron.left")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(usesUserHistory ? !canNavigateUserBackward : !canGoBackInSidebarNavigation)
+            .disabled(shouldUseUserHistoryNavigation ? !canNavigateUserBackward : !canGoBackInSidebarNavigation)
             .help("Zurueck")
 
             Button {
-                if usesUserHistory {
+                if shouldUseUserHistoryNavigation {
                     navigateUserForward()
                 } else {
                     goForwardInSidebarNavigation()
@@ -139,11 +138,11 @@ extension ContentView {
             } label: {
                 Image(systemName: "chevron.right")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(usesUserHistory ? !canNavigateUserForward : !canGoForwardInSidebarNavigation)
+            .disabled(shouldUseUserHistoryNavigation ? !canNavigateUserForward : !canGoForwardInSidebarNavigation)
             .help("Vor")
+        }
 
+        ToolbarItemGroup(placement: .automatic) {
             Button {
                 Task {
                     await reloadCurrentHeaderContext()
@@ -151,8 +150,6 @@ extension ContentView {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
             .help("Neu laden")
 
             Button {
@@ -160,8 +157,6 @@ extension ContentView {
             } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
             .help("Jetzt synchronisieren")
         }
     }

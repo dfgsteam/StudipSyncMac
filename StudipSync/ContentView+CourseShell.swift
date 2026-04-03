@@ -91,12 +91,17 @@ extension ContentView {
                 .padding(12)
                 .background(appPanelColor)
             } else {
-                List(filteredCoursesForList, selection: $selectedCourseID) { course in
-                    courseRow(course)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(filteredCoursesForList) { course in
+                            courseRow(course, isSelected: selectedCourseID == course.id)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .background(appPanelColor)
+                .defaultScrollAnchor(.top)
+                .background(appDetailPanelColor)
             }
 
             Text(courseStatusMessage)
@@ -107,10 +112,10 @@ extension ContentView {
                 .padding(.vertical, 8)
                 .background(appHeaderFill)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(appBorderColor.opacity(0.75), lineWidth: 1)
         )
     }
 
@@ -147,17 +152,16 @@ extension ContentView {
     var detailHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                Text(selectedSemester?.title ?? "Kein Semester ausgewaehlt")
+                Text(detailHeaderTitle)
                     .font(.title.weight(.bold))
                     .foregroundStyle(.primary)
                 Spacer()
                 Text(statusController.syncState.statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                headerNavigationAndActions
             }
-            if let selectedSemester {
-                Text("Kurse: \(coursesBySemesterID[selectedSemester.id]?.count ?? courses.count)")
+            if let subtitle = detailHeaderSubtitle {
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -165,6 +169,26 @@ extension ContentView {
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
         .background(appHeaderFill)
+    }
+
+    var detailHeaderTitle: String {
+        if let selectedCourse {
+            return selectedCourse.title
+        }
+        if let selectedSemester {
+            return selectedSemester.title
+        }
+        return "Kein Semester ausgewaehlt"
+    }
+
+    var detailHeaderSubtitle: String? {
+        if let selectedCourse {
+            return nonEmpty(selectedCourse.courseNumber).map { "Kursnr. \($0)" }
+        }
+        if let selectedSemester {
+            return "Kurse: \(coursesBySemesterID[selectedSemester.id]?.count ?? courses.count)"
+        }
+        return nil
     }
 
     func semesterStatusPlaceholder(for semester: SemesterDTO) -> some View {

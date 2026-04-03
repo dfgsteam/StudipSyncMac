@@ -1,6 +1,10 @@
 import SwiftUI
 
 extension ContentView {
+    var usesSingleDetailLayoutForSelectedPage: Bool {
+        selectedSemesterID == nil && (selectedPage == .start || selectedPage == .profil)
+    }
+
     var selectedPage: SidebarPage {
         selectedSidebarPage ?? .start
     }
@@ -23,18 +27,29 @@ extension ContentView {
     var pagesSidebar: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
-                uiSectionContainer {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("StudIP Sync")
-                            .font(.headline.weight(.semibold))
-                        HStack(spacing: 6) {
-                            Image(systemName: statusController.syncState.symbolName)
-                            Text(statusController.syncState.statusText)
-                                .lineLimit(1)
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("StudIP Sync")
+                        .font(.headline.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Image(systemName: statusController.syncState.symbolName)
+                        Text(statusController.syncState.statusText)
+                            .lineLimit(1)
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.regularMaterial)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.045))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(appBorderColor.opacity(0.45), lineWidth: 1)
                 }
 
                 HStack(spacing: 8) {
@@ -69,7 +84,11 @@ extension ContentView {
             .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(appSidebarPanelColor)
+        .background(.ultraThinMaterial)
+        .overlay {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.03))
+        }
     }
 
     var contentForSelectedPage: some View {
@@ -195,10 +214,17 @@ extension ContentView {
             }
         }
         .padding(12)
-        .background(appMutedPanelColor)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(appBorderColor.opacity(0.75), lineWidth: 1)
+                .fill(Color.accentColor.opacity(0.04))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(appBorderColor.opacity(0.5), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -245,7 +271,6 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                headerNavigationAndActions
             }
             GroupBox("Testdetails") {
                 Text("Statischer Detailbereich fuer UI-Tests.")

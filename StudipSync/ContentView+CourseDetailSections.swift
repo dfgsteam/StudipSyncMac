@@ -21,7 +21,7 @@ extension ContentView {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                Label("Uebersicht", systemImage: "info.circle")
+                Text(courseOverviewHeaderLabel(for: course))
                     .font(.headline)
             }
 
@@ -101,34 +101,64 @@ extension ContentView {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    func courseRow(_ course: CourseDTO) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "book.closed")
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(course.title)
-                    .font(.body.weight(.medium))
-                    .lineLimit(2)
-                if let secondary = courseSecondaryLine(for: course) {
-                    Text(secondary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    func courseOverviewHeaderLabel(for course: CourseDTO) -> String {
+        if let number = nonEmpty(course.courseNumber) {
+            return "Kursnr. \(number)"
         }
-        .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        return "Kursnr. -"
+    }
+
+    func courseRow(_ course: CourseDTO, isSelected: Bool) -> some View {
+        Button {
             selectSidebarCourse(course.id)
             Task(priority: .utility) {
                 await prefetchAllTabContentForCourse(course.id)
             }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "book.closed")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .frame(width: 18, height: 18)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(course.title)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                    if let secondary = courseSecondaryLine(for: course) {
+                        Text(secondary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.clear)
+            )
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(width: 3)
+                        .padding(.vertical, 4)
+                        .padding(.leading, 2)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
+        .buttonStyle(.plain)
     }
 
     func courseSecondaryLine(for course: CourseDTO) -> String? {
@@ -138,14 +168,10 @@ extension ContentView {
     }
 
     func courseMetaSummary(for course: CourseDTO) -> String? {
-        var parts: [String] = []
         if let number = nonEmpty(course.courseNumber) {
-            parts.append("Kursnr. \(number)")
+            return "Kursnr. \(number)"
         }
-        if let type = courseTypeLabel(for: course) {
-            parts.append(type)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+        return nil
     }
 
     func courseTypeLabel(for course: CourseDTO) -> String? {

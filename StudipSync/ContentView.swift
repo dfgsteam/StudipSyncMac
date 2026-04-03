@@ -213,25 +213,37 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if selectedSemesterID == nil {
+            if selectedSemesterID != nil {
                 NavigationSplitView {
                     pagesSidebar
+                        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
                 } content: {
-                    contentForSelectedPage
+                    coursesColumn
+                } detail: {
+                    detailColumn
+                }
+            } else if usesSingleDetailLayoutForSelectedPage {
+                NavigationSplitView {
+                    pagesSidebar
+                        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
                 } detail: {
                     detailForSelectedPage
                 }
             } else {
                 NavigationSplitView {
                     pagesSidebar
+                        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
                 } content: {
-                    coursesColumn
+                    contentForSelectedPage
                 } detail: {
-                    detailColumn
+                    detailForSelectedPage
                 }
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            appToolbarActions
+        }
         .frame(minWidth: 980, minHeight: 560)
         .background(appBackgroundGradient)
         .groupBoxStyle(StudipSoftGroupBoxStyle())
@@ -284,7 +296,6 @@ struct ContentView: View {
             await loadForumRepliesForSelectedEntry()
         }
         .task(id: semesterIDsSignature) {
-            selectFirstSemesterIfNeeded()
             pruneCourseOverviewCacheToKnownSemesters()
             await prefetchCourseOverviewsForLoadedSemesters()
         }

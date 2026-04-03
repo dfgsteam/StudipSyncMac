@@ -262,12 +262,6 @@ extension ContentView {
         }
     }
 
-    func selectFirstSemesterIfNeeded() {
-        guard selectedSemesterID == nil else { return }
-        guard let firstSemester = semesterViewModel.semesters.first else { return }
-        selectedSemesterID = firstSemester.id
-    }
-
     func pruneCourseOverviewCacheToKnownSemesters() {
         let knownSemesterIDs = Set(semesterViewModel.semesters.map(\.id))
         coursesBySemesterID = coursesBySemesterID.filter { knownSemesterIDs.contains($0.key) }

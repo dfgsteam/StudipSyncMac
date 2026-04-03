@@ -37,7 +37,6 @@ extension ContentView {
                 .background(Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
 
-                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)

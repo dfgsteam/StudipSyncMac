@@ -2,7 +2,7 @@ import SwiftUI
 
 extension ContentView {
     private var courseSearchFieldsForAPI: String {
-        "title,lecturer,number"
+        "title_lecturer_number"
     }
 
     var veranstaltungenContentColumn: some View {
@@ -115,7 +115,6 @@ extension ContentView {
                 }
 
                 Spacer()
-                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)

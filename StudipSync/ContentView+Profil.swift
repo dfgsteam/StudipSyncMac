@@ -94,8 +94,6 @@ extension ContentView {
                 Spacer()
 
                 HStack(spacing: 8) {
-                    headerNavigationAndActions
-
                     Button(isShowingMeProfileRawJSON ? "Rohdaten ausblenden" : "Rohdaten zeigen") {
                         isShowingMeProfileRawJSON.toggle()
                         if isShowingMeProfileRawJSON {
