@@ -140,12 +140,6 @@ extension ContentView {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(24)
             .background(appDetailPanelColor)
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(appHeaderFill)
         }
     }
 
@@ -253,23 +247,6 @@ extension ContentView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
-        }
-    }
-
-    var detailActions: some View {
-        HStack {
-            Button("Jetzt synchronisieren") {
-                syncScheduler.triggerManualSync()
-            }
-
-            SettingsLink {
-                Text("Einstellungen")
-            }
-
-            Button("Debug öffnen") {
-                debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
-                openWindow(id: "debugWindow")
-            }
         }
     }
 

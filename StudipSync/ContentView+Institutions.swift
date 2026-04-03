@@ -245,12 +245,6 @@ extension ContentView {
                     selectedInstitutionSemesterID = semesterViewModel.semesters.first?.id
                 }
             }
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(appHeaderFill)
         }
     }
 

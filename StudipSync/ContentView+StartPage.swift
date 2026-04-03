@@ -54,12 +54,6 @@ extension ContentView {
                 .padding(24)
             }
             .background(appDetailPanelColor)
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(appHeaderFill)
         }
     }
 
@@ -275,12 +269,6 @@ extension ContentView {
                     .controlSize(.small)
                     .disabled(semesterViewModel.semesters.isEmpty)
 
-                    Button("Debug oeffnen") {
-                        debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
-                        openWindow(id: "debugWindow")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

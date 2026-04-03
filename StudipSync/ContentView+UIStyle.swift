@@ -11,7 +11,6 @@ private enum StudipUITheme {
         endPoint: .bottomTrailing
     )
 
-    static let sidebarPanel = Color(nsColor: .controlBackgroundColor).opacity(0.82)
     static let panel = Color(nsColor: .controlBackgroundColor).opacity(0.72)
     static let detailPanel = Color(nsColor: .windowBackgroundColor).opacity(0.86)
     static let mutedPanel = Color.accentColor.opacity(0.08)
@@ -43,10 +42,6 @@ struct StudipSoftGroupBoxStyle: GroupBoxStyle {
 extension ContentView {
     var appHeaderFill: AnyShapeStyle {
         AnyShapeStyle(StudipUITheme.headerGradient)
-    }
-
-    var appSidebarPanelColor: Color {
-        StudipUITheme.sidebarPanel
     }
 
     var appPanelColor: Color {
@@ -158,6 +153,16 @@ extension ContentView {
                 Image(systemName: "arrow.triangle.2.circlepath")
             }
             .help("Jetzt synchronisieren")
+
+            if RuntimeFlags.isDeveloperModeEnabled {
+                Button {
+                    debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
+                    openWindow(id: "debugWindow")
+                } label: {
+                    Image(systemName: "ladybug")
+                }
+                .help("Debug oeffnen")
+            }
         }
     }
 

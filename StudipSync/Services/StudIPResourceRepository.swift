@@ -231,13 +231,7 @@ actor StudIPResourceRepository {
             return raw
         }()
         let validSearch = normalizedSearch.flatMap { $0.count >= 3 ? $0 : nil }
-        let normalizedFields: String? = {
-            guard let raw = searchFields?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty else {
-                return nil
-            }
-            return raw
-        }()
+        let normalizedFields = StudIPRepositoryUtilities.normalizeCourseSearchFieldsFilter(searchFields)
 
         if let userID, !userID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let normalizedUserID = canonicalStudIPID(userID)

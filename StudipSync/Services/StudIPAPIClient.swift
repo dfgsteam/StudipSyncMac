@@ -274,9 +274,8 @@ final class StudIPAPIClient {
             throw APIClientError.missingCredentials
         }
 
-        let raw = "\(credentials.username):\(credentials.password)"
-        let token = Data(raw.utf8).base64EncodedString()
-        let authorizationHeader = "Authorization: Basic \(token)"
+        // Never leak live credentials in debug output.
+        let authorizationHeader = "Authorization: Basic <REDACTED>"
 
         var parts = [
             "curl",

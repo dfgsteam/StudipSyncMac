@@ -234,12 +234,6 @@ extension ContentView {
                 .padding(24)
             }
             .background(appDetailPanelColor)
-
-            Divider()
-            detailActions
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(appHeaderFill)
         }
     }
 

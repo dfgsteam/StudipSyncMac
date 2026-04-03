@@ -6,6 +6,13 @@ struct StudipSyncApp: App {
     @State private var hasWarmedUpCurrentUser = false
 
     var body: some Scene {
+        mainWindowScene
+        menuBarScene
+        debugScene
+        settingsScene
+    }
+
+    var mainWindowScene: some Scene {
         WindowGroup("StudipSync") {
             ContentView(
                 statusController: container.statusController,
@@ -26,21 +33,31 @@ struct StudipSyncApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
+    }
 
+    var menuBarScene: some Scene {
         MenuBarExtra("StudipSync", systemImage: container.statusController.syncState.symbolName) {
             MenuBarRootView(
                 statusController: container.statusController,
                 syncScheduler: container.syncScheduler
             )
         }
+    }
 
+    var debugScene: some Scene {
         WindowGroup(id: "debugWindow") {
-            DebugWindowView(
-                repository: container.resourceRepository,
-                state: container.debugWindowState
-            )
+            if RuntimeFlags.isDeveloperModeEnabled {
+                DebugWindowView(
+                    repository: container.resourceRepository,
+                    state: container.debugWindowState
+                )
+            } else {
+                EmptyView()
+            }
         }
+    }
 
+    var settingsScene: some Scene {
         Settings {
             SettingsView(
                 settingsStore: container.settingsStore,

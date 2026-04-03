@@ -46,10 +46,12 @@ extension ContentView {
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.accentColor.opacity(0.045))
+                        .allowsHitTesting(false)
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(appBorderColor.opacity(0.45), lineWidth: 1)
+                        .allowsHitTesting(false)
                 }
 
                 HStack(spacing: 8) {
@@ -88,6 +90,7 @@ extension ContentView {
         .overlay {
             Rectangle()
                 .fill(Color.accentColor.opacity(0.03))
+                .allowsHitTesting(false)
         }
     }
 
@@ -221,10 +224,12 @@ extension ContentView {
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.accentColor.opacity(0.04))
+                .allowsHitTesting(false)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(appBorderColor.opacity(0.5), lineWidth: 1)
+                .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -277,8 +282,6 @@ extension ContentView {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer()
-            Divider()
-            detailActions
         }
         .padding(24)
     }
