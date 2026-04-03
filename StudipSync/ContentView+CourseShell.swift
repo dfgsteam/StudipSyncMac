@@ -35,7 +35,7 @@ extension ContentView {
     var coursesColumn: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Kurse im Semester")
+                Label("Kurse im Semester", systemImage: "books.vertical")
                     .font(.headline.weight(.semibold))
                 Spacer()
                 if isLoadingCourses {
@@ -52,7 +52,7 @@ extension ContentView {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(.bar)
+            .background(appHeaderFill)
 
             HStack(spacing: 8) {
                 TextField("Kurse filtern (Titel, Kursnummer, ID)", text: $courseListSearchQuery)
@@ -70,46 +70,33 @@ extension ContentView {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(appPanelColor)
 
             if let errorMessage = courseOverviewErrorMessage {
                 overviewMessageCard(errorMessage, isError: true)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(appPanelColor)
             }
 
             if filteredCoursesForList.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    if courseOverviewErrorMessage != nil {
-                        Text("Kursliste konnte nicht geladen werden.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Keine Kurse fuer dieses Semester gefunden."
-                            : "Keine Kurse fuer den aktuellen Filter gefunden."
-                        )
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    if !courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Tipp: Filter leeren oder Suchbegriff anpassen.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                uiEmptyState(
+                    title: courseOverviewErrorMessage == nil ? "Keine Kurse gefunden" : "Kursliste nicht verfuegbar",
+                    message: courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "Fuer dieses Semester wurden keine Kurse gefunden."
+                        : "Der aktuelle Filter liefert keine Treffer. Passe den Suchbegriff an.",
+                    systemImage: "book.closed"
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(12)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(appPanelColor)
             } else {
                 List(filteredCoursesForList, selection: $selectedCourseID) { course in
                     courseRow(course)
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(appPanelColor)
             }
 
             Text(courseStatusMessage)
@@ -118,9 +105,13 @@ extension ContentView {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.bar)
+                .background(appHeaderFill)
         }
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 
     var detailColumn: some View {
@@ -143,13 +134,13 @@ extension ContentView {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(24)
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
 
             Divider()
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 
@@ -158,16 +149,22 @@ extension ContentView {
             HStack(alignment: .firstTextBaseline) {
                 Text(selectedSemester?.title ?? "Kein Semester ausgewaehlt")
                     .font(.title.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Text(statusController.syncState.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                headerNavigationAndActions
+            }
+            if let selectedSemester {
+                Text("Kurse: \(coursesBySemesterID[selectedSemester.id]?.count ?? courses.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
-        .background(.bar)
+        .background(appHeaderFill)
     }
 
     func semesterStatusPlaceholder(for semester: SemesterDTO) -> some View {

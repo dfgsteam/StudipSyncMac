@@ -23,30 +23,26 @@ extension ContentView {
     var pagesSidebar: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
+                uiSectionContainer {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("StudIP Sync")
+                            .font(.headline.weight(.semibold))
+                        HStack(spacing: 6) {
+                            Image(systemName: statusController.syncState.symbolName)
+                            Text(statusController.syncState.statusText)
+                                .lineLimit(1)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
                 HStack(spacing: 8) {
                     Text("Navigation")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
                     Spacer()
-
-                    Button {
-                        goBackInSidebarNavigation()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(!canGoBackInSidebarNavigation)
-                    .help("Zurück")
-
-                    Button {
-                        goForwardInSidebarNavigation()
-                    } label: {
-                        Image(systemName: "chevron.right")
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(!canGoForwardInSidebarNavigation)
-                    .help("Vor")
                 }
 
                 LazyVStack(alignment: .leading, spacing: 6) {
@@ -57,9 +53,11 @@ extension ContentView {
                             Label(page.title, systemImage: page.systemImage)
                                 .font(.body.weight(.medium))
                                 .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                 }
 
@@ -71,6 +69,7 @@ extension ContentView {
             .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(appSidebarPanelColor)
     }
 
     var contentForSelectedPage: some View {
@@ -147,38 +146,36 @@ extension ContentView {
             }
 
             if filteredSemesterSidebarItems.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Keine Semester fuer den aktuellen Filter gefunden.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    if !sidebarSemesterSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Tipp: Filter leeren oder 'Neu laden' verwenden.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8)
+                uiEmptyState(
+                    title: "Keine Semester gefunden",
+                    message: sidebarSemesterSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "Lade die Semester neu, um Daten abzurufen."
+                        : "Passe den Filter an oder leere die Suche.",
+                    systemImage: "calendar.badge.exclamationmark"
+                )
             } else {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(filteredSemesterSidebarItems) { semester in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(semester.title)
-                                    .font(.body.weight(.medium))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .help("Semester-ID: \(semester.id)")
-                            }
-                            Spacer()
-                            Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
-                        }
-                        .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        Button {
                             selectSidebarSemester(semester.id)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(semester.title)
+                                        .font(.body.weight(.medium))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .help("Semester-ID: \(semester.id)")
+                                }
+                                Spacer()
+                                Image(systemName: semesterSelectionStore.isActive(semesterID: semester.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(semesterSelectionStore.isActive(semesterID: semester.id) ? .green : .secondary)
+                            }
+                            .modifier(SidebarSelectionModifier(isActive: isSelectedSemester(semester.id)))
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                         .contextMenu {
                             Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {
                                 semesterSelectionStore.setActive(!semesterSelectionStore.isActive(semesterID: semester.id), semesterID: semester.id)
@@ -198,6 +195,12 @@ extension ContentView {
             }
         }
         .padding(12)
+        .background(appMutedPanelColor)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(appBorderColor.opacity(0.75), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     var platzhalterContentColumn: some View {
@@ -234,10 +237,16 @@ extension ContentView {
 
     func staticMenuDetailColumn(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.title2.weight(.semibold))
-            Text(subtitle)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title2.weight(.semibold))
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                headerNavigationAndActions
+            }
             GroupBox("Testdetails") {
                 Text("Statischer Detailbereich fuer UI-Tests.")
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -122,13 +122,39 @@ actor StudIPFileRepository {
         return try responseDecoder.parseCollection(from: data, fallbackCollectionKeys: ["data", "folders", "collection", "items"])
     }
 
-    func fetchFileContent(fileRefID: String) async throws -> Data {
+    func fetchFileContent(fileRefID: String, fallbackDownloadPath: String? = nil) async throws -> Data {
         let escapedID = StudIPRepositoryUtilities.escapedPathID(fileRefID)
-        return try await apiClient.performRequest(
-            path: "/v1/file-refs/\(escapedID)/content",
-            method: .get,
-            acceptHeader: "*/*"
-        )
+        do {
+            return try await apiClient.performRequest(
+                path: "/v1/file-refs/\(escapedID)/content",
+                method: .get,
+                acceptHeader: "*/*"
+            )
+        } catch let contentError {
+            guard let fallbackDownloadPath = fallbackDownloadPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !fallbackDownloadPath.isEmpty else {
+                throw contentError
+            }
+
+            AppLogger.info("File content endpoint failed for \(escapedID), trying fallback download path.")
+
+            do {
+                return try await apiClient.performRawPathRequest(
+                    path: fallbackDownloadPath,
+                    method: .get,
+                    acceptHeader: "*/*"
+                )
+            } catch let fallbackError {
+                throw NSError(
+                    domain: "StudIPFileRepository",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Dateidownload fehlgeschlagen. content: \(contentError.localizedDescription) | fallback: \(fallbackError.localizedDescription)"
+                    ]
+                )
+            }
+        }
     }
 
     func headFileContent(fileRefID: String) async throws -> StudIPHTTPResponse {

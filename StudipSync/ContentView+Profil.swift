@@ -15,21 +15,29 @@ extension ContentView {
                     }
 
                     if let profile = meProfile {
-                        Text(userDisplayName(profile))
-                            .font(.title3.weight(.semibold))
-                            .lineLimit(2)
-                        Text(userSecondaryLine(profile))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                        HStack(alignment: .top, spacing: 10) {
+                            userAvatarView(user: profile, size: 36)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(userDisplayName(profile))
+                                    .font(.title3.weight(.semibold))
+                                    .lineLimit(2)
+                                Text(userSecondaryLine(profile))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
                     } else if let meProfileError, nonEmpty(meProfileError) != nil {
                         Text(meProfileError)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Noch keine Profildaten geladen.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                        uiEmptyState(
+                            title: "Profil noch nicht geladen",
+                            message: "Lade oben dein Profil aus /users/me.",
+                            systemImage: "person.crop.circle.badge.clock"
+                        )
                     }
 
                     if let meProfileLoadedDate {
@@ -86,6 +94,8 @@ extension ContentView {
                 Spacer()
 
                 HStack(spacing: 8) {
+                    headerNavigationAndActions
+
                     Button(isShowingMeProfileRawJSON ? "Rohdaten ausblenden" : "Rohdaten zeigen") {
                         isShowingMeProfileRawJSON.toggle()
                         if isShowingMeProfileRawJSON {
@@ -108,14 +118,16 @@ extension ContentView {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
-            .background(.bar)
+            .background(appHeaderFill)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let profile = meProfile {
                         GroupBox {
                             VStack(alignment: .leading, spacing: 10) {
-                                HStack(alignment: .firstTextBaseline) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    userAvatarView(user: profile, size: 52)
+
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(userDisplayName(profile))
                                             .font(.title3.weight(.semibold))
@@ -238,26 +250,28 @@ extension ContentView {
                                 Text(meProfileRawError)
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
-                            } else {
-                                Text("Keine Rohdaten geladen.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } label: {
-                            Label("Rohantwort /users/me", systemImage: "curlybraces")
+                    } else {
+                        uiEmptyState(
+                            title: "Keine Rohdaten",
+                            message: "Es sind noch keine JSON-Rohdaten fuer /users/me geladen.",
+                            systemImage: "curlybraces.square"
+                        )
+                    }
+                } label: {
+                    Label("Rohantwort /users/me", systemImage: "curlybraces")
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
 
             Divider()
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 

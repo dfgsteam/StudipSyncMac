@@ -20,19 +20,14 @@ extension ContentView {
     var filteredInstitutionCourses: [CourseDTO] {
         guard let key = selectedInstitutionCourseKey else { return [] }
         let courses = institutionCoursesByKey[key] ?? []
-        let query = institutionCourseSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return courses }
         return courses.filter { course in
-            let haystack = [
+            fieldMatchesSearchQuery(institutionCourseSearchQuery, fields: [
                 course.title,
                 course.subtitle,
                 course.courseNumber,
                 course.description,
                 course.location
-            ]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(query)
+            ])
         }
     }
 
@@ -53,7 +48,7 @@ extension ContentView {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoadingInstitutions)
 
-                        if !institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if hasSearchQuery(institutionSearchQuery) {
                             Button {
                                 institutionSearchQuery = ""
                             } label: {
@@ -91,20 +86,13 @@ extension ContentView {
 
             GroupBox {
                 if filteredInstitutions.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Noch keine Einrichtungen geladen. Starte eine Suche, um Ergebnisse vom Server zu laden."
-                             : "Keine Einrichtungen fuer den aktuellen Filter gefunden."
-                        )
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        if !institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Tipp: Suchbegriff anpassen oder leeren.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    uiEmptyState(
+                        title: "Keine Einrichtungen",
+                        message: !hasSearchQuery(institutionSearchQuery)
+                            ? "Starte oben eine Suche, um Einrichtungen vom Server zu laden."
+                            : "Keine Treffer fuer den aktuellen Suchbegriff. Passe den Filter an.",
+                        systemImage: "building.columns"
+                    )
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
@@ -137,10 +125,11 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
-            .background(.bar)
+            .background(appHeaderFill)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -238,14 +227,17 @@ extension ContentView {
                             Label("Veranstaltungsergebnis", systemImage: "list.bullet.rectangle")
                         }
                     } else {
-                        Text("Waehle links eine Einrichtung aus.")
-                            .foregroundStyle(.secondary)
+                        uiEmptyState(
+                            title: "Keine Einrichtung ausgewaehlt",
+                            message: "Waehle links eine Einrichtung aus, um Profil und Veranstaltungen pro Semester zu sehen.",
+                            systemImage: "building.2.crop.circle"
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
             .task(id: selectedInstitutionCourseKey ?? "none") {
                 await loadCoursesForSelectedInstitutionSemester(force: false)
             }
@@ -259,7 +251,7 @@ extension ContentView {
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 
@@ -335,8 +327,7 @@ extension ContentView {
         defer { isLoadingInstitutions = false }
 
         do {
-            let query = institutionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            let search = query.isEmpty ? nil : query
+            let search = normalizedSearchQuery(institutionSearchQuery)
             do {
                 let fetched = try await repository.fetchInstitutes(offset: 0, limit: 1000, search: search)
                 institutions = fetched.sorted {
@@ -353,13 +344,20 @@ extension ContentView {
                 return
             }
             catch {
+                let debugCURL = await repository.debugInstitutesSearchCURL(
+                    search: search,
+                    offset: 0,
+                    limit: 1000
+                )
+                recordSearchFailure(context: "Einrichtungssuche", query: search, curl: debugCURL, error: error)
+
                 if let search, !search.isEmpty,
                    let fallbackAll = try? await repository.fetchInstitutes(offset: 0, limit: 1000, search: nil) {
                     institutions = localInstituteFilterIfNeeded(institutes: fallbackAll, query: search).sorted {
                         instituteDisplayName($0).localizedCaseInsensitiveCompare(instituteDisplayName($1)) == .orderedAscending
                     }
                     institutionsLoadedDate = Date()
-                    institutionsError = "Server-Suche nicht verfuegbar, lokal gefiltert."
+                    institutionsError = "Server-Suche nicht verfuegbar (\(error.localizedDescription)). Lokal gefiltert."
 
                     if resetSelection {
                         selectedInstituteID = nil
@@ -375,23 +373,19 @@ extension ContentView {
     }
 
     func localInstituteFilterIfNeeded(institutes: [InstituteDTO], query: String?) -> [InstituteDTO] {
-        guard let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else {
+        guard hasSearchQuery(query) else {
             return institutes
         }
 
-        let normalizedQuery = query.lowercased()
         return institutes.filter { institute in
-            let haystack = [
+            fieldMatchesSearchQuery(query, fields: [
                 instituteDisplayName(institute),
                 institute.shortName,
                 institute.description,
                 institute.email,
                 institute.address,
                 institute.id
-            ]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(normalizedQuery)
+            ])
         }
     }
 

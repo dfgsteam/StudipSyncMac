@@ -44,6 +44,54 @@ struct DebugWindowView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if !state.searchDebugEntries.isEmpty {
+                GroupBox {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(state.searchDebugEntries) { entry in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(Self.debugDateFormatter.string(from: entry.timestamp)) • \(entry.context)")
+                                        .font(.caption.weight(.semibold))
+
+                                    if !entry.query.isEmpty {
+                                        Text("Query: \(entry.query)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+
+                                    Text("Fehler: \(entry.errorMessage)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+
+                                    Text(entry.curl)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+
+                                if entry.id != state.searchDebugEntries.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 120, maxHeight: 240)
+                } label: {
+                    HStack {
+                        Label("Suchfehler (cURL + API-Fehler)", systemImage: "exclamationmark.triangle")
+                        Spacer()
+                        Button("Leeren") {
+                            state.clearSearchFailures()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                    }
+                }
+            }
+
             TextEditor(text: $commandsText)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(minHeight: 300)
@@ -60,6 +108,13 @@ struct DebugWindowView: View {
         let course = state.courseID ?? "-"
         return "Semester-ID: \(semester) | Kurs-ID: \(course)"
     }
+
+    private static let debugDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .medium
+        return formatter
+    }()
 
     private func loadCommands() async {
         isLoading = true

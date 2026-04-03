@@ -690,6 +690,11 @@ struct UserDTO: Decodable, Hashable, Identifiable {
     let publication: String?
     let focus: String?
     let motto: String?
+    let avatarURL: String?
+    let avatarSmallURL: String?
+    let avatarMediumURL: String?
+    let avatarNormalURL: String?
+    let avatarOriginalURL: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -730,6 +735,12 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         case publication
         case focus
         case motto
+        case avatar
+        case avatarSmall = "avatar-small"
+        case avatarMedium = "avatar-medium"
+        case avatarNormal = "avatar-normal"
+        case avatarOriginal = "avatar-original"
+        case picture
         case attributes
         case links
     }
@@ -773,6 +784,12 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         case publication
         case focus
         case motto
+        case avatar
+        case avatarSmall = "avatar-small"
+        case avatarMedium = "avatar-medium"
+        case avatarNormal = "avatar-normal"
+        case avatarOriginal = "avatar-original"
+        case picture
     }
 
     enum LinksCodingKeys: String, CodingKey {
@@ -900,6 +917,19 @@ struct UserDTO: Decodable, Hashable, Identifiable {
 
         motto = container.decodeNonEmptyString(forKey: .motto)
             ?? attributes?.decodeNonEmptyString(forKey: .motto)
+
+        avatarURL = container.decodeNonEmptyString(forKey: .avatar)
+            ?? container.decodeNonEmptyString(forKey: .picture)
+            ?? attributes?.decodeNonEmptyString(forKey: .avatar)
+            ?? attributes?.decodeNonEmptyString(forKey: .picture)
+        avatarSmallURL = container.decodeNonEmptyString(forKey: .avatarSmall)
+            ?? attributes?.decodeNonEmptyString(forKey: .avatarSmall)
+        avatarMediumURL = container.decodeNonEmptyString(forKey: .avatarMedium)
+            ?? attributes?.decodeNonEmptyString(forKey: .avatarMedium)
+        avatarNormalURL = container.decodeNonEmptyString(forKey: .avatarNormal)
+            ?? attributes?.decodeNonEmptyString(forKey: .avatarNormal)
+        avatarOriginalURL = container.decodeNonEmptyString(forKey: .avatarOriginal)
+            ?? attributes?.decodeNonEmptyString(forKey: .avatarOriginal)
     }
 
     var preferredDisplayName: String? {
@@ -923,6 +953,14 @@ struct UserDTO: Decodable, Hashable, Identifiable {
         }
 
         return username
+    }
+
+    var preferredAvatarPath: String? {
+        avatarNormalURL
+            ?? avatarMediumURL
+            ?? avatarSmallURL
+            ?? avatarURL
+            ?? avatarOriginalURL
     }
 }
 

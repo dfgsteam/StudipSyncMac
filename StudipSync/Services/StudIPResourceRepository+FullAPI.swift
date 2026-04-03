@@ -7,6 +7,7 @@ extension StudIPResourceRepository {
         semesterID: String? = nil,
         userID: String? = nil,
         search: String? = nil,
+        searchFields: String? = nil,
         offset: Int? = nil,
         limit: Int? = nil
     ) async throws -> [CourseDTO] {
@@ -14,6 +15,7 @@ extension StudIPResourceRepository {
             semesterID: semesterID,
             userID: userID,
             search: search,
+            searchFields: searchFields,
             offset: offset,
             limit: limit
         )
@@ -87,8 +89,8 @@ extension StudIPResourceRepository {
         try await files().fetchFolderFolders(folderID: folderID, offset: offset, limit: limit)
     }
 
-    func fetchFileContent(fileRefID: String) async throws -> Data {
-        try await files().fetchFileContent(fileRefID: fileRefID)
+    func fetchFileContent(fileRefID: String, fallbackDownloadPath: String? = nil) async throws -> Data {
+        try await files().fetchFileContent(fileRefID: fileRefID, fallbackDownloadPath: fallbackDownloadPath)
     }
 
     func headFileContent(fileRefID: String) async throws -> StudIPHTTPResponse {

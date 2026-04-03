@@ -25,6 +25,7 @@ struct StudipSyncApp: App {
                 }
             }
         }
+        .windowStyle(.hiddenTitleBar)
 
         MenuBarExtra("StudipSync", systemImage: container.statusController.syncState.symbolName) {
             MenuBarRootView(

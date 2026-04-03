@@ -105,7 +105,7 @@ extension ContentView {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoadingUserSearch)
 
-                        if !userSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if hasSearchQuery(userSearchQuery) {
                             Button {
                                 userSearchQuery = ""
                                 userSearchResults = []
@@ -167,20 +167,13 @@ extension ContentView {
 
             GroupBox {
                 if userSearchResults.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(userSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                             ? "Noch keine Treffer. Suche oben nach einem Benutzer."
-                             : "Keine Benutzer fuer den aktuellen Suchbegriff gefunden."
-                        )
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        if !userSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Tipp: Mindestens 3 Zeichen verwenden oder den Begriff anpassen.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    uiEmptyState(
+                        title: "Keine Benutzer",
+                        message: !hasSearchQuery(userSearchQuery)
+                            ? "Starte oben eine Suche nach Name, Username oder E-Mail."
+                            : "Keine Treffer fuer den aktuellen Suchbegriff. Tipp: mindestens 3 Zeichen.",
+                        systemImage: "person.crop.circle.badge.questionmark"
+                    )
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
@@ -221,57 +214,34 @@ extension ContentView {
 
                 Spacer()
 
-                HStack(spacing: 8) {
-                    Button {
-                        navigateUserBackward()
-                    } label: {
-                        Label("Zurueck", systemImage: "chevron.backward")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!canNavigateUserBackward)
-
-                    Button {
-                        navigateUserForward()
-                    } label: {
-                        Label("Vor", systemImage: "chevron.forward")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!canNavigateUserForward)
-
-                    if let selectedUserID {
-                        Button("Neu laden") {
-                            Task { await ensureUserDetailsLoaded(userID: selectedUserID, force: true) }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
+                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
-            .background(.bar)
+            .background(appHeaderFill)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let selectedUserID {
                         userDetailView(userID: selectedUserID)
                     } else {
-                        Text("Waehle einen Benutzer aus der Treffer- oder Merkliste aus.")
-                            .foregroundStyle(.secondary)
+                        uiEmptyState(
+                            title: "Kein Benutzer ausgewaehlt",
+                            message: "Waehle links einen Benutzer aus der Treffer- oder Merkliste aus.",
+                            systemImage: "person.crop.circle.badge.exclamationmark"
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
 
             Divider()
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 
@@ -281,9 +251,15 @@ extension ContentView {
         let isSelected = selectedUserID == userID
 
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "bookmark.fill")
-                .foregroundStyle(.yellow)
-                .frame(width: 18)
+            if let user {
+                userAvatarView(user: user, size: 28)
+            } else {
+                Image(systemName: "bookmark.fill")
+                    .foregroundStyle(.yellow)
+                    .frame(width: 28, height: 28)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Circle())
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(user.map(userDisplayName) ?? "User \(userID)")
@@ -324,14 +300,7 @@ extension ContentView {
         let remembered = isRememberedUser(id: user.id)
 
         return HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(Color.accentColor.opacity(0.18))
-                .overlay {
-                    Text(userInitials(user))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(width: 30, height: 30)
+            userAvatarView(user: user, size: 30)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(userDisplayName(user))
@@ -387,7 +356,9 @@ extension ContentView {
         } else if let user {
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
+                    HStack(alignment: .top, spacing: 10) {
+                        userAvatarView(user: user, size: 48)
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(userDisplayName(user))
                                 .font(.title3.weight(.semibold))
@@ -797,7 +768,7 @@ extension ContentView {
     }
 
     func runUserSearch(force: Bool = false) async {
-        let query = userSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = normalizedSearchQuery(userSearchQuery) ?? ""
 
         guard !query.isEmpty else {
             userSearchResults = []
@@ -843,6 +814,8 @@ extension ContentView {
             }
             lastUserSearchDate = Date()
         } catch {
+            let debugCURL = await repository.debugUsersSearchCURL(search: query, offset: 0, limit: 100)
+            recordSearchFailure(context: "Benutzersuche", query: query, curl: debugCURL, error: error)
             userSearchError = "Fehler bei der Benutzersuche: \(error.localizedDescription)"
         }
     }
@@ -874,76 +847,132 @@ extension ContentView {
             }
         }
 
-        do {
-            let memberships = try await repository.fetchInstituteMemberships(userID: id, offset: 0, limit: 250)
-            userInstituteMembershipsByID[id] = memberships
-        } catch {
-            appendUserExtrasError(userID: id, message: "Institute: \(error.localizedDescription)")
+        let shouldLoadMemberships = force || userInstituteMembershipsByID[id] == nil
+        let shouldLoadCourses = force || userCoursesByID[id] == nil
+        let shouldLoadEvents = force || userUpcomingEventsByID[id] == nil
+        let shouldLoadSchedule = force || userScheduleByID[id] == nil
+        let shouldLoadNews = force || userNewsByID[id] == nil
+
+        guard shouldLoadMemberships || shouldLoadCourses || shouldLoadEvents || shouldLoadSchedule || shouldLoadNews else {
+            return
         }
 
-        do {
-            let courses = try await repository.fetchCoursesForUser(userID: id, offset: 0, limit: 200)
-            let sortedCourses = courses.sorted { lhs, rhs in
-                let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
-                let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
-                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        let nowTimestamp = Int(Date().timeIntervalSince1970)
+
+        async let membershipsResult: Result<[InstituteMembershipDTO], Error>? = shouldLoadMemberships
+            ? loadUserExtrasResult { try await repository.fetchInstituteMemberships(userID: id, offset: 0, limit: 250) }
+            : nil
+        async let coursesResult: Result<[CourseDTO], Error>? = shouldLoadCourses
+            ? loadUserExtrasResult { try await repository.fetchCoursesForUser(userID: id, offset: 0, limit: 200) }
+            : nil
+        async let eventsResult: Result<[EventDTO], Error>? = shouldLoadEvents
+            ? loadUserExtrasResult { try await repository.fetchUserEvents(userID: id, timestamp: nowTimestamp) }
+            : nil
+        async let scheduleResult: Result<[ScheduleEntryDTO], Error>? = shouldLoadSchedule
+            ? loadUserExtrasResult { try await repository.fetchUserSchedule(userID: id, timestamp: nowTimestamp) }
+            : nil
+        async let newsResult: Result<[NewsDTO], Error>? = shouldLoadNews
+            ? loadUserExtrasResult { try await repository.fetchUserNews(userID: id, offset: 0, limit: 20) }
+            : nil
+
+        if let membershipsResult = await membershipsResult {
+            switch membershipsResult {
+            case .success(let memberships):
+                userInstituteMembershipsByID[id] = memberships
+            case .failure(let error):
+                appendUserExtrasError(userID: id, message: "Institute: \(error.localizedDescription)")
             }
-            userCoursesByID[id] = sortedCourses
-        } catch {
-            appendUserExtrasError(userID: id, message: "Veranstaltungen: \(error.localizedDescription)")
         }
 
-        do {
-            let nowTimestamp = Int(Date().timeIntervalSince1970)
-            let events = try await repository.fetchUserEvents(userID: id, timestamp: nowTimestamp)
-            let sortedEvents = events.sorted { lhs, rhs in
-                let lhsStart = parseAPIDate(lhs.start) ?? .distantFuture
-                let rhsStart = parseAPIDate(rhs.start) ?? .distantFuture
-                if lhsStart != rhsStart {
-                    return lhsStart < rhsStart
-                }
-                let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
-                let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
-                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        if let coursesResult = await coursesResult {
+            switch coursesResult {
+            case .success(let courses):
+                userCoursesByID[id] = sortUserCoursesForDisplay(courses)
+            case .failure(let error):
+                appendUserExtrasError(userID: id, message: "Veranstaltungen: \(error.localizedDescription)")
             }
-            userUpcomingEventsByID[id] = sortedEvents
-        } catch {
-            appendUserExtrasError(userID: id, message: "Termine: \(error.localizedDescription)")
         }
 
-        do {
-            let nowTimestamp = Int(Date().timeIntervalSince1970)
-            let schedule = try await repository.fetchUserSchedule(userID: id, timestamp: nowTimestamp)
-            let sortedSchedule = schedule.sorted { lhs, rhs in
-                let lhsStart = parseAPIDate(lhs.start) ?? .distantFuture
-                let rhsStart = parseAPIDate(rhs.start) ?? .distantFuture
-                if lhsStart != rhsStart {
-                    return lhsStart < rhsStart
-                }
-                let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
-                let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
-                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        if let eventsResult = await eventsResult {
+            switch eventsResult {
+            case .success(let events):
+                userUpcomingEventsByID[id] = sortUserEventsForDisplay(events)
+            case .failure(let error):
+                appendUserExtrasError(userID: id, message: "Termine: \(error.localizedDescription)")
             }
-            userScheduleByID[id] = sortedSchedule
-        } catch {
-            appendUserExtrasError(userID: id, message: "Stundenplan: \(error.localizedDescription)")
         }
 
-        do {
-            let news = try await repository.fetchUserNews(userID: id, offset: 0, limit: 20)
-            let sortedNews = news.sorted { lhs, rhs in
-                let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
-                let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
-                if lhsDate != rhsDate {
-                    return lhsDate > rhsDate
-                }
-                let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
-                let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
-                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        if let scheduleResult = await scheduleResult {
+            switch scheduleResult {
+            case .success(let schedule):
+                userScheduleByID[id] = sortUserScheduleForDisplay(schedule)
+            case .failure(let error):
+                appendUserExtrasError(userID: id, message: "Stundenplan: \(error.localizedDescription)")
             }
-            userNewsByID[id] = sortedNews
+        }
+
+        if let newsResult = await newsResult {
+            switch newsResult {
+            case .success(let news):
+                userNewsByID[id] = sortUserNewsForDisplay(news)
+            case .failure(let error):
+                appendUserExtrasError(userID: id, message: "News: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func loadUserExtrasResult<T>(_ operation: () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await operation())
         } catch {
-            appendUserExtrasError(userID: id, message: "News: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+
+    func sortUserCoursesForDisplay(_ courses: [CourseDTO]) -> [CourseDTO] {
+        courses.sorted { lhs, rhs in
+            let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+            let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+            return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        }
+    }
+
+    func sortUserEventsForDisplay(_ events: [EventDTO]) -> [EventDTO] {
+        events.sorted { lhs, rhs in
+            let lhsStart = parseAPIDate(lhs.start) ?? .distantFuture
+            let rhsStart = parseAPIDate(rhs.start) ?? .distantFuture
+            if lhsStart != rhsStart {
+                return lhsStart < rhsStart
+            }
+            let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+            let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+            return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        }
+    }
+
+    func sortUserScheduleForDisplay(_ scheduleEntries: [ScheduleEntryDTO]) -> [ScheduleEntryDTO] {
+        scheduleEntries.sorted { lhs, rhs in
+            let lhsStart = parseAPIDate(lhs.start) ?? .distantFuture
+            let rhsStart = parseAPIDate(rhs.start) ?? .distantFuture
+            if lhsStart != rhsStart {
+                return lhsStart < rhsStart
+            }
+            let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+            let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+            return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+        }
+    }
+
+    func sortUserNewsForDisplay(_ news: [NewsDTO]) -> [NewsDTO] {
+        news.sorted { lhs, rhs in
+            let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
+            let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            let lhsTitle = nonEmpty(lhs.title) ?? lhs.id
+            let rhsTitle = nonEmpty(rhs.title) ?? rhs.id
+            return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
         }
     }
 
@@ -984,6 +1013,62 @@ extension ContentView {
             .joined()
 
         return letters.isEmpty ? "?" : letters
+    }
+
+    func userAvatarURL(_ user: UserDTO) -> URL? {
+        absoluteAssetURL(user.preferredAvatarPath)
+    }
+
+    func absoluteAssetURL(_ rawPath: String?) -> URL? {
+        guard let rawPath = nonEmpty(rawPath) else { return nil }
+
+        if let absolute = URL(string: rawPath), absolute.scheme != nil {
+            return absolute
+        }
+
+        guard let baseURL = apiBaseURLForAssets else {
+            return nil
+        }
+
+        let normalizedPath = rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+        return URL(string: normalizedPath, relativeTo: baseURL)?.absoluteURL
+    }
+
+    @ViewBuilder
+    func userAvatarView(user: UserDTO, size: CGFloat) -> some View {
+        if let avatarURL = userAvatarURL(user) {
+            AsyncImage(url: avatarURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .empty:
+                    ProgressView()
+                        .controlSize(.small)
+                case .failure:
+                    avatarInitialsFallback(user: user, size: size)
+                @unknown default:
+                    avatarInitialsFallback(user: user, size: size)
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+        } else {
+            avatarInitialsFallback(user: user, size: size)
+        }
+    }
+
+    func avatarInitialsFallback(user: UserDTO, size: CGFloat) -> some View {
+        Circle()
+            .fill(Color.accentColor.opacity(0.18))
+            .overlay {
+                Text(userInitials(user))
+                    .font(.system(size: max(11, size * 0.34), weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: size, height: size)
     }
 
     func userNewsPreviewText(_ newsItem: NewsDTO) -> String? {

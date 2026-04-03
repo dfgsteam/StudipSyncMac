@@ -86,30 +86,30 @@ struct StudIPHTTPResponse {
 
 final class StudIPAPIClient {
     enum APIClientError: LocalizedError {
-        case invalidPath
+        case invalidPath(String)
         case missingCredentials
-        case invalidResponse
-        case unauthorized
+        case invalidResponse(String)
+        case unauthorized(String)
         case sandboxNetworkPermissionMissing
-        case httpStatus(Int, String?)
+        case httpStatus(Int, String?, String)
 
         var errorDescription: String? {
             switch self {
-            case .invalidPath:
-                return "Ungueltiger API-Pfad."
+            case .invalidPath(let requestReference):
+                return "Ungueltiger API-Pfad. Request: \(requestReference)"
             case .missingCredentials:
                 return "Kein Login hinterlegt. Bitte Username/Passwort speichern."
-            case .invalidResponse:
-                return "Ungueltige API-Antwort."
-            case .unauthorized:
-                return "Autorisierung fehlgeschlagen (Username/Passwort pruefen)."
+            case .invalidResponse(let requestURL):
+                return "Ungueltige API-Antwort. URL: \(requestURL)"
+            case .unauthorized(let requestURL):
+                return "Autorisierung fehlgeschlagen (Username/Passwort pruefen). URL: \(requestURL)"
             case .sandboxNetworkPermissionMissing:
                 return "App-Sandbox blockiert Netzwerk. Aktiviere in den Target Capabilities: Outgoing Connections (Client)."
-            case .httpStatus(let code, let body):
+            case .httpStatus(let code, let body, let requestURL):
                 if let body, !body.isEmpty {
-                    return "HTTP-Fehler \(code): \(body)"
+                    return "HTTP-Fehler \(code) auf \(requestURL): \(body)"
                 }
-                return "HTTP-Fehler: \(code)"
+                return "HTTP-Fehler \(code) auf \(requestURL)"
             }
         }
     }
@@ -126,6 +126,28 @@ final class StudIPAPIClient {
 
     func performRequest(path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
         try await performRequest(path: path, queryItems: queryItems, method: .get)
+    }
+
+    func performRawPathRequest(
+        path: String,
+        method: StudIPHTTPMethod = .get,
+        body: Data? = nil,
+        acceptHeader: String? = "*/*",
+        contentTypeHeader: String? = nil
+    ) async throws -> Data {
+        let response = try await performRawPathRequestWithResponse(
+            path: path,
+            method: method,
+            body: body,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader
+        )
+
+        if method == .head {
+            return response.data
+        }
+
+        return response.data
     }
 
     func performRequest(
@@ -185,7 +207,37 @@ final class StudIPAPIClient {
 
         let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
         guard let url = buildURL(baseURL: baseURL, path: path, queryItems: queryItems) else {
-            throw APIClientError.invalidPath
+            throw APIClientError.invalidPath(requestReference(baseURL: baseURL, path: path, queryItems: queryItems))
+        }
+
+        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+            throw APIClientError.missingCredentials
+        }
+
+        return try await send(
+            url: url,
+            credentials: credentials,
+            method: method,
+            body: body,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader
+        )
+    }
+
+    func performRawPathRequestWithResponse(
+        path: String,
+        method: StudIPHTTPMethod = .get,
+        body: Data? = nil,
+        acceptHeader: String? = "*/*",
+        contentTypeHeader: String? = nil
+    ) async throws -> StudIPHTTPResponse {
+        guard hasOutgoingNetworkPermission() else {
+            throw APIClientError.sandboxNetworkPermissionMissing
+        }
+
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        guard let url = buildRawURL(baseURL: baseURL, path: path) else {
+            throw APIClientError.invalidPath("\(baseURL.absoluteString) | \(path)")
         }
 
         guard let credentials = try keychainService.readCredentials(for: baseURL) else {
@@ -215,7 +267,7 @@ final class StudIPAPIClient {
     ) async throws -> String {
         let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
         guard let url = buildURL(baseURL: baseURL, path: path, queryItems: queryItems) else {
-            throw APIClientError.invalidPath
+            throw APIClientError.invalidPath(requestReference(baseURL: baseURL, path: path, queryItems: queryItems))
         }
 
         guard let credentials = try keychainService.readCredentials(for: baseURL) else {
@@ -265,6 +317,35 @@ final class StudIPAPIClient {
         StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: path, queryItems: queryItems)
     }
 
+    private func buildRawURL(baseURL: URL, path: String) -> URL? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let absoluteURL = URL(string: trimmed), absoluteURL.scheme != nil {
+            return absoluteURL
+        }
+
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        if let supplied = URLComponents(string: trimmed) {
+            let resolvedPath: String
+            if supplied.path.isEmpty {
+                resolvedPath = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
+            } else {
+                resolvedPath = supplied.path.hasPrefix("/") ? supplied.path : "/\(supplied.path)"
+            }
+
+            components.path = resolvedPath
+            components.percentEncodedQuery = supplied.percentEncodedQuery
+            return components.url
+        }
+
+        components.path = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
+        return components.url
+    }
+
     private func send(
         url: URL,
         credentials: HTTPBasicCredentials,
@@ -293,16 +374,16 @@ final class StudIPAPIClient {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw APIClientError.invalidResponse
+            throw APIClientError.invalidResponse(url.absoluteString)
         }
 
         if http.statusCode == 401 || http.statusCode == 403 {
-            throw APIClientError.unauthorized
+            throw APIClientError.unauthorized(url.absoluteString)
         }
 
         guard (200..<300).contains(http.statusCode) else {
             let bodyText = String(data: data, encoding: .utf8)
-            throw APIClientError.httpStatus(http.statusCode, bodyText)
+            throw APIClientError.httpStatus(http.statusCode, bodyText, url.absoluteString)
         }
 
         return StudIPHTTPResponse(data: data, statusCode: http.statusCode, headers: http.allHeaderFields)
@@ -336,5 +417,20 @@ final class StudIPAPIClient {
 
     private func shellEscaped(_ string: String) -> String {
         string.replacingOccurrences(of: "'", with: "'\\''")
+    }
+
+    private func requestReference(baseURL: URL, path: String, queryItems: [URLQueryItem]) -> String {
+        let query = URLComponents(url: URL(string: "https://stub.invalid")!, resolvingAgainstBaseURL: false)
+        let queryString: String
+        if queryItems.isEmpty {
+            queryString = ""
+        } else {
+            var components = query
+            components?.queryItems = queryItems
+            let encoded = components?.percentEncodedQuery ?? ""
+            queryString = encoded.isEmpty ? "" : "?\(encoded)"
+        }
+
+        return "\(baseURL.absoluteString) | \(path)\(queryString)"
     }
 }

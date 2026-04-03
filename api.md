@@ -1,9 +1,9 @@
 # Courses API
 
-## Route
+## Route  
 `GET /jsonapi.php/v1/courses`
 
-## Typ
+## Typ  
 `GET`
 
 ## Parameter
@@ -12,64 +12,180 @@
 
 | Name             | Typ    | Pflicht | Beschreibung |
 |------------------|--------|--------|-------------|
-| filter[semester] | string | nein   | Filter nach Semester-ID |
-| filter[user]     | string | nein   | Filter nach Benutzer-ID |
-| page[offset]           | int    | nein   | Startindex der Rückgabe |
-| page[limit]            | int    | nein   | Maximale Anzahl an Datensätzen |
+| page[offset]     | int    | nein   | Startindex |
+| page[limit]      | int    | nein   | Anzahl der Datensätze |
+| filter[q]        | string | nein   | Suchbegriff (min. 3 Zeichen) |
+| filter[fields]   | string | nein   | Suchfelder (z. B. title, lecturer, number) |
+| filter[semester] | string | nein   | Semester |
 
 ## Beispiel-Antwort
 
+~~~json
 {
   "data": [
     {
       "type": "courses",
-      "id": "course123",
+      "id": "course1",
       "attributes": {
         "title": "Mathematik 1",
-        "subtitle": "Einführung",
-        "description": "Grundlagen der Mathematik",
-        "location": "Raum 101",
-        "type": "lecture",
-        "start-date": "2025-10-15T10:00:00+00:00",
-        "end-date": "2026-02-15T12:00:00+00:00"
+        "course-number": "MATH-101"
       }
     }
-  ],
-  "meta": {
-    "total": 25
-  }
+  ]
 }
+~~~
 
 ---
 
-## Route
+## Route  
 `GET /jsonapi.php/v1/courses/{id}`
 
-## Typ
+## Typ  
 `GET`
 
 ## Parameter
 
-### Path-Parameter
-
 | Name | Typ    | Pflicht | Beschreibung |
 |------|--------|--------|-------------|
-| id   | string | ja     | ID des Kurses |
+| id   | string | ja     | Kurs-ID |
 
 ## Beispiel-Antwort
 
+~~~json
 {
   "data": {
     "type": "courses",
-    "id": "course123",
+    "id": "course1",
     "attributes": {
-      "title": "Mathematik 1",
-      "subtitle": "Einführung",
-      "description": "Grundlagen der Mathematik",
-      "location": "Raum 101",
-      "type": "lecture",
-      "start-date": "2025-10-15T10:00:00+00:00",
-      "end-date": "2026-02-15T12:00:00+00:00"
+      "title": "Mathematik 1"
+    }
+  }
+}
+~~~
+
+---
+
+## Route  
+`GET /jsonapi.php/v1/users/{id}/courses`
+
+## Typ  
+`GET`
+
+## Parameter
+
+| Name | Typ    | Pflicht | Beschreibung |
+|------|--------|--------|-------------|
+| id   | string | ja     | User-ID |
+
+## Beispiel-Antwort
+
+~~~json
+{
+  "data": []
+}
+~~~
+
+---
+
+## Route  
+`GET /jsonapi.php/v1/courses/{id}/memberships`
+
+## Typ  
+`GET`
+
+## Parameter
+
+| Name | Typ    | Pflicht | Beschreibung |
+|------|--------|--------|-------------|
+| id   | string | ja     | Kurs-ID |
+
+### Query-Parameter
+
+| Name               | Typ    | Pflicht | Beschreibung |
+|--------------------|--------|--------|-------------|
+| filter[permission] | string | nein   | Rolle des Nutzers |
+
+## Beispiel-Antwort
+
+~~~json
+{
+  "data": []
+}
+~~~
+
+---
+
+## Route  
+`GET /jsonapi.php/v1/courses/{id}/relationships/memberships`
+
+## Typ  
+`GET`
+
+## Parameter
+
+| Name | Typ    | Pflicht | Beschreibung |
+|------|--------|--------|-------------|
+| id   | string | ja     | Kurs-ID |
+
+## Beispiel-Antwort
+
+~~~json
+{
+  "data": []
+}
+~~~
+
+---
+
+## Route  
+`GET /jsonapi.php/v1/course-memberships/{id}`
+
+## Typ  
+`GET`
+
+## Parameter
+
+| Name | Typ    | Pflicht | Beschreibung |
+|------|--------|--------|-------------|
+| id   | string | ja     | Membership-ID |
+
+## Beispiel-Antwort
+
+~~~json
+{
+  "data": {
+    "type": "course-memberships",
+    "id": "1",
+    "attributes": {
+      "permission": "autor"
+    }
+  }
+}
+~~~
+
+---
+
+## Route  
+`PATCH /jsonapi.php/v1/course-memberships/{id}`
+
+## Typ  
+`PATCH`
+
+## Parameter
+
+| Name | Typ    | Pflicht | Beschreibung |
+|------|--------|--------|-------------|
+| id   | string | ja     | Membership-ID |
+
+## Beispiel-Antwort
+
+~~~json
+{
+  "data": {
+    "type": "course-memberships",
+    "id": "1",
+    "attributes": {
+      "visible": "yes"
     }
   }
 }

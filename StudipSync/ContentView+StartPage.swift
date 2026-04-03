@@ -4,6 +4,7 @@ extension ContentView {
     var startContentColumn: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                startHeroBanner
                 startStatsGrid
                 startScheduleWidget(limit: 5)
                 startSemesterOverviewWidget
@@ -35,13 +36,16 @@ extension ContentView {
                 .padding(.vertical, 6)
                 .background(Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
+
+                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
-            .background(.bar)
+            .background(appHeaderFill)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    startHeroBanner
                     startStatsGrid
                     startScheduleWidget(limit: 8)
                     startSemesterOverviewWidget
@@ -50,13 +54,13 @@ extension ContentView {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
 
             Divider()
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 
@@ -65,6 +69,30 @@ extension ContentView {
             return "Aktives Semester: \(current.title)"
         }
         return "Uebersicht ueber Synchronisation, Semester und Termine"
+    }
+
+    var startHeroBanner: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "sparkles.rectangle.stack")
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(Color.accentColor.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Uebersicht")
+                    .font(.headline.weight(.semibold))
+                Text("Schneller Zugriff auf Semester, Termine und Sync-Status.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     var currentSemesterForDashboard: SemesterDTO? {

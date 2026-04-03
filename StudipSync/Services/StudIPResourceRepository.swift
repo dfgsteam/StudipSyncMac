@@ -75,6 +75,10 @@ actor StudIPResourceRepository {
     func institutes() -> StudIPInstituteRepository { instituteRepository }
     func coursesAPI() -> StudIPCourseRepository { courseRepository }
 
+    func currentBaseURL() async -> URL {
+        await MainActor.run { settingsStore.configuration.baseURL }
+    }
+
     func loadSemestersStaleWhileRevalidate(onRefresh: (@MainActor ([SemesterDTO]) -> Void)? = nil) async throws -> SemesterLoadResult {
         let (baseURL, semesterStartDateFilter, semesterEndDateFilter) = await MainActor.run {
             (
@@ -209,6 +213,64 @@ actor StudIPResourceRepository {
         }
 
         return [command]
+    }
+
+    func debugCoursesSearchCURL(
+        semesterID: String?,
+        userID: String? = nil,
+        search: String?,
+        searchFields: String? = nil,
+        offset: Int = 0,
+        limit: Int = 1000
+    ) async -> String? {
+        let normalizedSearch: String? = {
+            guard let raw = search?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else {
+                return nil
+            }
+            return raw
+        }()
+        let validSearch = normalizedSearch.flatMap { $0.count >= 3 ? $0 : nil }
+        let normalizedFields: String? = {
+            guard let raw = searchFields?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else {
+                return nil
+            }
+            return raw
+        }()
+
+        if let userID, !userID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let normalizedUserID = canonicalStudIPID(userID)
+            let escapedUserID = normalizedUserID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedUserID
+            let query = StudIPQuery<CourseResource>()
+                .whereFilter("semester", equals: semesterID.map(canonicalStudIPID))
+                .paginate(offset: offset, limit: limit)
+            return try? await apiClient.makeCURL(path: "/v1/users/\(escapedUserID)/courses", queryItems: query.queryItems)
+        }
+
+        let query = StudIPQuery<CourseResource>()
+            .whereFilter("semester", equals: semesterID.map(canonicalStudIPID))
+            .whereFilter("q", equals: validSearch)
+            .whereFilter("fields", equals: normalizedFields)
+            .paginate(offset: offset, limit: limit)
+
+        return try? await apiClient.makeCURL(path: query.path, queryItems: query.queryItems)
+    }
+
+    func debugUsersSearchCURL(search: String?, offset: Int = 0, limit: Int = 100) async -> String? {
+        var queryItems = StudIPRepositoryUtilities.pageQueryItems(offset: offset, limit: limit)
+        if let search, !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "filter[search]", value: search))
+        }
+        return try? await apiClient.makeCURL(path: "/v1/users", queryItems: queryItems)
+    }
+
+    func debugInstitutesSearchCURL(search: String?, offset: Int = 0, limit: Int = 1000) async -> String? {
+        var queryItems = StudIPRepositoryUtilities.pageQueryItems(offset: offset, limit: limit)
+        if let search, !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "filter[search]", value: search))
+        }
+        return try? await apiClient.makeCURL(path: "/v1/institutes", queryItems: queryItems)
     }
 
     private func refreshSemesters(

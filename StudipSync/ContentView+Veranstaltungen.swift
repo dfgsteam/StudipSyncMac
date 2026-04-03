@@ -1,6 +1,10 @@
 import SwiftUI
 
 extension ContentView {
+    private var courseSearchFieldsForAPI: String {
+        "title,lecturer,number"
+    }
+
     var veranstaltungenContentColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox {
@@ -18,7 +22,7 @@ extension ContentView {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoadingCatalogCourses)
 
-                        if !courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if hasSearchQuery(courseCatalogQuery) {
                             Button {
                                 courseCatalogQuery = ""
                             } label: {
@@ -63,24 +67,15 @@ extension ContentView {
                 }
 
                 if catalogCourses.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let message = nonEmpty(catalogCoursesError), message.lowercased().hasPrefix("fehler") {
-                            Text("Die Trefferliste konnte nicht geladen werden.")
-                        } else {
-                            Text(courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                 ? "Noch keine Veranstaltungen geladen. Starte eine Suche, um Ergebnisse vom Server zu laden."
-                                 : "Keine Veranstaltungen fuer den aktuellen Filter gefunden."
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        }
-                        if !courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Tipp: Suchbegriff anpassen oder leeren.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    uiEmptyState(
+                        title: nonEmpty(catalogCoursesError)?.lowercased().hasPrefix("fehler") == true
+                            ? "Trefferliste nicht verfuegbar"
+                            : "Keine Veranstaltungen",
+                        message: !hasSearchQuery(courseCatalogQuery)
+                            ? "Starte eine Suche, um Veranstaltungen vom Server zu laden."
+                            : "Keine Treffer fuer den aktuellen Filter. Passe den Suchbegriff an.",
+                        systemImage: "book.closed"
+                    )
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
@@ -120,10 +115,11 @@ extension ContentView {
                 }
 
                 Spacer()
+                headerNavigationAndActions
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
-            .background(.bar)
+            .background(appHeaderFill)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -210,20 +206,23 @@ extension ContentView {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Waehle links eine Veranstaltung aus.")
-                            .foregroundStyle(.secondary)
+                        uiEmptyState(
+                            title: "Keine Veranstaltung ausgewaehlt",
+                            message: "Waehle links eine Veranstaltung aus, um Details und Einschreibung zu sehen.",
+                            systemImage: "book.closed.circle"
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(appDetailPanelColor)
 
             Divider()
             detailActions
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(appHeaderFill)
         }
     }
 
@@ -321,12 +320,12 @@ extension ContentView {
         defer { isLoadingCatalogCourses = false }
 
         do {
-            let query = courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            let search = query.isEmpty ? nil : query
+            let search = normalizedSearchQuery(courseCatalogQuery)
             let fetched = try await repository.fetchCoursesCollection(
                 semesterID: selectedCatalogSemesterID,
                 userID: nil,
                 search: search,
+                searchFields: courseSearchFieldsForAPI,
                 offset: 0,
                 limit: 1000
             )
@@ -336,6 +335,17 @@ extension ContentView {
             selectedCatalogCourseDetailError = nil
             catalogCoursesLoadedDate = Date()
         } catch {
+            let search = normalizedSearchQuery(courseCatalogQuery)
+            let debugCURL = await repository.debugCoursesSearchCURL(
+                semesterID: selectedCatalogSemesterID,
+                userID: nil,
+                search: search,
+                searchFields: courseSearchFieldsForAPI,
+                offset: 0,
+                limit: 1000
+            )
+            recordSearchFailure(context: "Veranstaltungssuche", query: search, curl: debugCURL, error: error)
+
             if let fallback = try? await repository.fetchCoursesCollection(
                 semesterID: selectedCatalogSemesterID,
                 userID: nil,
@@ -343,14 +353,13 @@ extension ContentView {
                 offset: 0,
                 limit: 1000
             ) {
-                let query = courseCatalogQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                let localFiltered = localCourseFilterIfNeeded(courses: fallback, query: query.isEmpty ? nil : query)
+                let localFiltered = localCourseFilterIfNeeded(courses: fallback, query: search)
                 catalogCourses = sortCoursesForDisplay(localFiltered)
                 selectedCatalogCourseID = catalogCourses.first?.id
                 selectedCatalogCourseDetail = nil
                 selectedCatalogCourseDetailError = nil
                 catalogCoursesLoadedDate = Date()
-                catalogCoursesError = "Server-Suche nicht verfuegbar, lokal gefiltert."
+                catalogCoursesError = "Server-Suche nicht verfuegbar (\(error.localizedDescription)). Lokal gefiltert."
             } else {
                 catalogCourses = []
                 selectedCatalogCourseID = nil
@@ -360,23 +369,19 @@ extension ContentView {
     }
 
     func localCourseFilterIfNeeded(courses: [CourseDTO], query: String?) -> [CourseDTO] {
-        guard let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else {
+        guard hasSearchQuery(query) else {
             return courses
         }
 
-        let normalized = query.lowercased()
         return courses.filter { course in
-            let haystack = [
+            fieldMatchesSearchQuery(query, fields: [
                 course.id,
                 course.title,
                 course.subtitle,
                 course.courseNumber,
                 course.description,
                 course.location
-            ]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(normalized)
+            ])
         }
     }
 

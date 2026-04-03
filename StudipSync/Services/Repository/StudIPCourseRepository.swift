@@ -22,17 +22,53 @@ actor StudIPCourseRepository {
         semesterID: String? = nil,
         userID: String? = nil,
         search: String? = nil,
+        searchFields: String? = nil,
         offset: Int? = nil,
         limit: Int? = nil
     ) async throws -> [CourseDTO] {
-        let query = StudIPQuery<CourseResource>()
-            .whereFilter("semester", equals: semesterID.map(canonicalStudIPID))
-            .whereFilter("user", equals: userID.map(canonicalStudIPID))
-            .whereFilter("search", equals: search?.trimmingCharacters(in: .whitespacesAndNewlines))
-            .paginate(offset: offset ?? defaultCourseOffset, limit: limit ?? defaultCourseLimit)
+        let trimmedSearch = search?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedSearch = normalizedCourseSearchQuery(from: trimmedSearch)
+        let normalizedSemesterID = semesterID.map(canonicalStudIPID)
+        let normalizedFields = normalizedCourseSearchFields(from: searchFields)
+        let queryOffset = offset ?? defaultCourseOffset
+        let queryLimit = limit ?? defaultCourseLimit
 
-        let data = try await apiClient.performRequest(path: query.path, queryItems: query.queryItems)
-        return try responseDecoder.parseCollection(from: data, fallbackCollectionKeys: CourseResource.fallbackCollectionKeys)
+        // /courses supports filter[q], filter[fields], filter[semester] (see api.md)
+        // /users/{id}/courses is user-scoped and must not use filter[user].
+        if let userID {
+            let normalizedUserID = canonicalStudIPID(userID)
+            let userScopedQuery = StudIPQuery<CourseResource>()
+                .whereFilter("semester", equals: normalizedSemesterID)
+                .paginate(offset: queryOffset, limit: queryLimit)
+
+            let data = try await apiClient.performRequest(
+                path: userCoursesPath(for: normalizedUserID),
+                queryItems: userScopedQuery.queryItems
+            )
+            let courses = try responseDecoder.parseCollection(
+                from: data,
+                fallbackCollectionKeys: CourseResource.fallbackCollectionKeys
+            ) as [CourseDTO]
+
+            guard let normalizedSearch else {
+                return courses
+            }
+
+            return filterCoursesLocally(
+                courses,
+                search: normalizedSearch,
+                fields: normalizedFields
+            )
+        } else {
+            let collectionQuery = StudIPQuery<CourseResource>()
+                .whereFilter("semester", equals: normalizedSemesterID)
+                .whereFilter("q", equals: normalizedSearch)
+                .whereFilter("fields", equals: normalizedFields)
+                .paginate(offset: queryOffset, limit: queryLimit)
+
+            let data = try await apiClient.performRequest(path: collectionQuery.path, queryItems: collectionQuery.queryItems)
+            return try responseDecoder.parseCollection(from: data, fallbackCollectionKeys: CourseResource.fallbackCollectionKeys)
+        }
     }
 
     func fetchCourses(for semesterID: String, offset: Int? = nil, limit: Int? = nil) async throws -> [CourseDTO] {
@@ -45,7 +81,18 @@ actor StudIPCourseRepository {
             .whereFilter("semester", equals: normalizedSemesterID)
             .paginate(offset: queryOffset, limit: queryLimit)
 
-        let filtered = try await fetchUserCourses(userID: userID, queryItems: query.queryItems)
+        let serverResult: [CourseDTO]
+        do {
+            serverResult = try await fetchUserCourses(userID: userID, queryItems: query.queryItems)
+        } catch {
+            // Some installations expose /users/{id}/courses without semester filter support.
+            let fallbackQuery = StudIPQuery<CourseResource>()
+                .paginate(offset: queryOffset, limit: queryLimit)
+            let allUserCourses = try await fetchUserCourses(userID: userID, queryItems: fallbackQuery.queryItems)
+            serverResult = allUserCourses
+        }
+
+        let filtered = serverResult.filter { $0.matches(semesterID: normalizedSemesterID) }
         if filtered.isEmpty {
             throw StudIPRepositoryError.noCoursesForSemester(normalizedSemesterID)
         }
@@ -60,11 +107,22 @@ actor StudIPCourseRepository {
         limit: Int? = nil
     ) async throws -> [CourseDTO] {
         let normalizedUserID = canonicalStudIPID(userID)
+        let normalizedSemesterID = semesterID.map(canonicalStudIPID)
         let query = StudIPQuery<CourseResource>()
-            .whereFilter("semester", equals: semesterID.map(canonicalStudIPID))
+            .whereFilter("semester", equals: normalizedSemesterID)
             .paginate(offset: offset ?? defaultCourseOffset, limit: limit ?? defaultCourseLimit)
 
-        return try await fetchUserCourses(userID: normalizedUserID, queryItems: query.queryItems)
+        do {
+            let courses = try await fetchUserCourses(userID: normalizedUserID, queryItems: query.queryItems)
+            guard let normalizedSemesterID else { return courses }
+            return courses.filter { $0.matches(semesterID: normalizedSemesterID) }
+        } catch {
+            guard let normalizedSemesterID else { throw error }
+            let fallbackQuery = StudIPQuery<CourseResource>()
+                .paginate(offset: offset ?? defaultCourseOffset, limit: limit ?? defaultCourseLimit)
+            let courses = try await fetchUserCourses(userID: normalizedUserID, queryItems: fallbackQuery.queryItems)
+            return courses.filter { $0.matches(semesterID: normalizedSemesterID) }
+        }
     }
 
     func fetchCourse(id: String) async throws -> CourseDTO {
@@ -107,6 +165,65 @@ actor StudIPCourseRepository {
             .paginate(offset: offset ?? defaultCourseOffset, limit: limit ?? defaultCourseLimit)
 
         return (userCoursesPath(for: userID), query.queryItems)
+    }
+
+    private func normalizedCourseSearchQuery(from search: String?) -> String? {
+        guard let search, !search.isEmpty else { return nil }
+        guard search.count >= 3 else { return nil }
+        return search
+    }
+
+    private func normalizedCourseSearchFields(from fields: String?) -> String? {
+        guard let fields else { return nil }
+        let trimmed = fields.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func filterCoursesLocally(_ courses: [CourseDTO], search: String, fields: String?) -> [CourseDTO] {
+        let normalizedSearch = search.lowercased()
+
+        let requestedFields: [String]
+        if let fields {
+            requestedFields = fields
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        } else {
+            requestedFields = ["title", "lecturer", "number", "id", "subtitle", "description", "location"]
+        }
+
+        return courses.filter { course in
+            var haystacks: [String] = []
+            for field in requestedFields {
+                switch field {
+                case "title":
+                    haystacks.append(course.title)
+                case "number", "course-number":
+                    if let value = course.courseNumber { haystacks.append(value) }
+                case "lecturer":
+                    if let value = course.description { haystacks.append(value) } // fallback: no dedicated lecturer field in DTO
+                case "subtitle":
+                    if let value = course.subtitle { haystacks.append(value) }
+                case "description":
+                    if let value = course.description { haystacks.append(value) }
+                case "location":
+                    if let value = course.location { haystacks.append(value) }
+                case "id":
+                    haystacks.append(course.id)
+                default:
+                    // Unknown server field token: include common text fields as fallback.
+                    haystacks.append(course.title)
+                    if let value = course.courseNumber { haystacks.append(value) }
+                    if let value = course.subtitle { haystacks.append(value) }
+                    if let value = course.description { haystacks.append(value) }
+                    if let value = course.location { haystacks.append(value) }
+                    haystacks.append(course.id)
+                }
+            }
+
+            let joined = haystacks.joined(separator: " ").lowercased()
+            return joined.contains(normalizedSearch)
+        }
     }
 
     private func fetchUserCourses(userID: String, queryItems: [URLQueryItem]) async throws -> [CourseDTO] {
