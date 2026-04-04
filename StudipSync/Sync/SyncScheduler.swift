@@ -333,14 +333,39 @@ final class SyncScheduler {
                 return SyncErrorClassification(category: .configuration, userMessage: syncError.localizedDescription)
             case .couldNotResolveRootFolder, .rootFolderNotAccessible:
                 return SyncErrorClassification(category: .localAccess, userMessage: syncError.localizedDescription)
-            case .activeSemesterSyncFailed:
-                return SyncErrorClassification(category: .serverTemporary, userMessage: syncError.localizedDescription)
+            case .activeSemesterSyncFailed(let failures):
+                let mappedCategory = mapActiveSemesterFailureCategory(failures)
+                return SyncErrorClassification(category: mappedCategory, userMessage: syncError.localizedDescription)
             case .missingDownloadedFilePayload:
                 return SyncErrorClassification(category: .serverTemporary, userMessage: syncError.localizedDescription)
             }
         }
 
         return SyncErrorClassification(category: .unknown, userMessage: error.localizedDescription)
+    }
+
+    private func mapActiveSemesterFailureCategory(_ failures: [SyncEngine.ActiveSemesterFailure]) -> SyncErrorCategory {
+        guard !failures.isEmpty else {
+            return .unknown
+        }
+
+        let categories = Set(failures.map(\.category))
+        if categories.count == 1, categories.contains(.offline) {
+            return .offline
+        }
+        if categories.contains(.unauthorized) {
+            return .unauthorized
+        }
+        if categories.contains(.configuration) {
+            return .configuration
+        }
+        if categories.contains(.localAccess) {
+            return .localAccess
+        }
+        if categories.contains(.serverTemporary) || categories.contains(.offline) {
+            return .serverTemporary
+        }
+        return .unknown
     }
 
     private func retryDelaySeconds(forAttempt attempt: Int) -> Double {

@@ -171,7 +171,7 @@ struct SemesterDTO: Codable, Hashable, Identifiable {
     }()
 }
 
-struct CourseDTO: Decodable, Hashable, Identifiable {
+struct CourseDTO: Codable, Hashable, Identifiable {
     let id: String
     let title: String
     let subtitle: String?
@@ -299,6 +299,21 @@ struct CourseDTO: Decodable, Hashable, Identifiable {
         semClassID = relSemClass.map(canonicalStudIPID)
         semTypeID = relSemType.map(canonicalStudIPID)
         courseTypeID = semTypeID ?? semClassID
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(subtitle, forKey: .subtitle)
+        try container.encodeIfPresent(courseNumber, forKey: .courseNumber)
+        try container.encodeIfPresent(courseType, forKey: .courseType)
+        try container.encodeIfPresent(description, forKey: .description)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(miscellaneous, forKey: .miscellaneous)
+        try container.encodeIfPresent(semesterID, forKey: .semesterID)
+        try container.encodeIfPresent(startSemesterRef, forKey: .startSemester)
+        try container.encodeIfPresent(endSemesterRef, forKey: .endSemester)
     }
 
     nonisolated func matches(semesterID: String) -> Bool {

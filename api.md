@@ -1862,3 +1862,42 @@ Gibt den aktuell authentifizierten Nutzer zurück.
 | Name | Typ    | Pflicht | Beschreibung |
 |------|--------|--------|-------------|
 | id   | string | ja     | ID des Nutzers |
+---
+
+# Ergaenzende Routen (Abgleich 2026-04-04)
+
+## Route
+`GET /jsonapi.php/v1/blubber-streams`
+
+## Route
+`GET /jsonapi.php/v1/blubber-threads/{id}/comments`
+
+## Route
+`GET /jsonapi.php/v1/comments`
+
+## Route
+`GET /jsonapi.php/v1/course-memberships`
+
+## Route
+`GET /jsonapi.php/v1/file-refs`
+
+## Route
+`GET /jsonapi.php/v1/folders`
+
+## Route
+`GET /jsonapi.php/v1/forum-categories`
+
+## Route
+`GET /jsonapi.php/v1/forum-entries`
+
+## Route
+`GET /jsonapi.php/v1/institutes`
+
+## Route
+`GET /jsonapi.php/v1/institutes/{id}`
+
+## Route
+`GET /jsonapi.php/v1/schedule-entries`
+
+## Route
+`GET /jsonapi.php/v1/seminar-cycle-dates`

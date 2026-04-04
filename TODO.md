@@ -21,3 +21,11 @@
 - [x] "Cache leeren" in Settings implementiert (Metadata + Shared-Courses Cache).
 - [x] Unit-/Integrations-/UI-Smoke-Testabdeckung erweitert.
 - [x] Release-Checkliste erstellt (`RELEASE_CHECKLIST.md`).
+
+## audit follow-ups (neu, 2026-04-04)
+
+- [x] Persistenten Kurs-Metadaten-Cache auf Disk ergaenzen (nicht nur Semester, inklusive SWR-Fallback offline nach Neustart).
+- [x] `SyncEngine`-Fehleraggregation typisieren (statt String-Listen), damit `SyncScheduler` Retry/Status je Ursache korrekt klassifiziert.
+- [x] "Cache leeren" um In-Memory-Invalidierung erweitern (aktive Semester-/Kurslisten sofort leeren/neu laden).
+- [x] UI-Smoke-Tests fuer Settings/Menu-Bar robust ausbauen (ohne fragilen `Cmd+,`-Pfad, inkl. Statuswechsel-Assertion).
+- [x] API-Dokumentation/Route-Abgleich aktualisieren (`validate_api_coverage.py`: undokumentierte implementierte Routen aufloesen).

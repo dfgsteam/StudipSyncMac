@@ -306,6 +306,7 @@ struct SettingsView: View {
                 try await metadataCache.clear(baseURL: baseURL)
                 try await sharedCourseParticipationCache.clearAll()
                 await MainActor.run {
+                    NotificationCenter.default.post(name: .studipCachesCleared, object: nil)
                     isClearingCache = false
                     message = "Lokale Cache-Daten wurden geleert."
                 }
@@ -383,12 +384,26 @@ struct SettingsView: View {
                 return (false, "Sync-Ordner existiert nicht mehr.")
             }
 
-            guard FileManager.default.isReadableFile(atPath: url.path) else {
-                return (false, "Sync-Ordner ist nicht lesbar.")
+            do {
+                _ = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            } catch {
+                return (false, "Sync-Ordner kann nicht gelesen werden (Verzeichniszugriff fehlgeschlagen).")
             }
 
-            guard FileManager.default.isWritableFile(atPath: url.path) else {
-                return (false, "Sync-Ordner ist nicht beschreibbar.")
+            let probeURL = url.appendingPathComponent("studipsync-access-\(UUID().uuidString).tmp", isDirectory: false)
+            let created = FileManager.default.createFile(atPath: probeURL.path, contents: Data(), attributes: nil)
+            guard created else {
+                return (false, "Sync-Ordner ist nur teilweise autorisiert (Schreibtest fehlgeschlagen). Bitte Ordner erneut auswaehlen.")
+            }
+
+            do {
+                let handle = try FileHandle(forWritingTo: probeURL)
+                defer { try? handle.close() }
+                try handle.write(contentsOf: Data("probe".utf8))
+                try FileManager.default.removeItem(at: probeURL)
+            } catch {
+                try? FileManager.default.removeItem(at: probeURL)
+                return (false, "Sync-Ordner ist nur teilweise autorisiert (Schreibtest fehlgeschlagen). Bitte Ordner erneut auswaehlen.")
             }
 
             return (true, "Ordnerzugriff aktiv.")

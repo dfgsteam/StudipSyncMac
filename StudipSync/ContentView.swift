@@ -331,6 +331,9 @@ struct ContentView: View {
         .sheet(item: $selectedQuickLookFile) { previewFile in
             quickLookSheet(for: previewFile)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .studipCachesCleared)) { _ in
+            handleCachesClearedNotification()
+        }
     }
 
 

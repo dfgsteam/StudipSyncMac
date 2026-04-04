@@ -152,6 +152,7 @@ extension ContentView {
             } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
             }
+            .accessibilityIdentifier("toolbar.syncNow")
             .help("Jetzt synchronisieren")
 
             if RuntimeFlags.isDeveloperModeEnabled {

@@ -269,6 +269,39 @@ extension ContentView {
         prefetchingSemesterCourseIDs = prefetchingSemesterCourseIDs.intersection(knownSemesterIDs)
     }
 
+    func handleCachesClearedNotification() {
+        coursesBySemesterID.removeAll()
+        coursePrefetchErrorsBySemesterID.removeAll()
+        prefetchingSemesterCourseIDs.removeAll()
+        courses = []
+        selectedCourseID = nil
+        courseStatusMessage = "Lokaler Cache geleert - Kursdaten werden neu geladen."
+
+        semesterScheduleEventsBySemesterID.removeAll()
+        semesterScheduleErrorsBySemesterID.removeAll()
+        semesterScheduleLoadedAtBySemesterID.removeAll()
+        loadingSemesterScheduleIDs.removeAll()
+
+        sharedCoursesByUserID.removeAll()
+        sharedCoursesUpdatedAt = nil
+        sharedCoursesNamespaceKey = nil
+        sharedCoursesError = nil
+
+        semesterViewModel.loadSemesters()
+
+        if selectedPage == .benutzer, selectedSemesterID == nil {
+            Task {
+                await loadSharedCoursesFromLocalCacheIfNeeded()
+            }
+        }
+
+        if selectedSemesterID != nil {
+            Task {
+                await loadCoursesForSelectedSemester()
+            }
+        }
+    }
+
     func prefetchCourseOverviewsForLoadedSemesters() async {
         guard !semesterViewModel.semesters.isEmpty else { return }
         for semester in semesterViewModel.semesters {
@@ -284,8 +317,18 @@ extension ContentView {
         defer { prefetchingSemesterCourseIDs.remove(semesterID) }
 
         do {
-            let fetched = try await repository.fetchCourses(for: semesterID)
-            let sorted = sortCoursesForDisplay(fetched)
+            let result = try await repository.loadCoursesStaleWhileRevalidate(for: semesterID) { refreshed in
+                let refreshedSorted = sortCoursesForDisplay(refreshed)
+                coursesBySemesterID[semesterID] = refreshedSorted
+                if selectedSemesterID == semesterID {
+                    courses = refreshedSorted
+                    courseStatusMessage = refreshedSorted.isEmpty
+                        ? "Keine Kurse gefunden"
+                        : "\(refreshedSorted.count) Kurse geladen"
+                }
+                coursePrefetchErrorsBySemesterID[semesterID] = nil
+            }
+            let sorted = sortCoursesForDisplay(result.courses)
             coursesBySemesterID[semesterID] = sorted
             coursePrefetchErrorsBySemesterID[semesterID] = nil
         } catch {
@@ -312,11 +355,24 @@ extension ContentView {
         }
 
         do {
-            let fetched = try await repository.fetchCourses(for: selectedSemesterID)
-            let sorted = sortCoursesForDisplay(fetched)
+            let result = try await repository.loadCoursesStaleWhileRevalidate(for: selectedSemesterID) { refreshed in
+                let refreshedSorted = sortCoursesForDisplay(refreshed)
+                coursesBySemesterID[selectedSemesterID] = refreshedSorted
+                courses = refreshedSorted
+                courseStatusMessage = refreshedSorted.isEmpty
+                    ? "Keine Kurse gefunden"
+                    : "\(refreshedSorted.count) Kurse geladen"
+            }
+            let sorted = sortCoursesForDisplay(result.courses)
             coursesBySemesterID[selectedSemesterID] = sorted
             courses = sorted
-            courseStatusMessage = fetched.isEmpty ? "Keine Kurse gefunden" : "\(fetched.count) Kurse geladen"
+            if result.source == .cache {
+                courseStatusMessage = sorted.isEmpty
+                    ? "Keine Kurse im lokalen Cache"
+                    : "\(sorted.count) Kurse aus lokalem Cache geladen"
+            } else {
+                courseStatusMessage = sorted.isEmpty ? "Keine Kurse gefunden" : "\(sorted.count) Kurse geladen"
+            }
         } catch {
             courses = []
             courseStatusMessage = "Fehler beim Laden der Kurse: \(error.localizedDescription)"

@@ -125,14 +125,34 @@ protocol SyncEngineRepository: Sendable {
         ifNoneMatch: String?,
         ifModifiedSince: String?
     ) async throws -> StudIPFileRepository.FileContentDownloadResult
+    func ensureRootFolderAccessByPromptingUserIfNeeded() async -> Bool
+}
+
+extension SyncEngineRepository {
+    func ensureRootFolderAccessByPromptingUserIfNeeded() async -> Bool { true }
 }
 
 actor SyncEngine {
+    struct ActiveSemesterFailure: Sendable, Equatable {
+        enum Category: String, Sendable {
+            case offline
+            case unauthorized
+            case configuration
+            case localAccess
+            case serverTemporary
+            case unknown
+        }
+
+        let semesterID: String
+        let category: Category
+        let message: String
+    }
+
     enum SyncEngineError: LocalizedError {
         case rootFolderNotConfigured
         case couldNotResolveRootFolder
         case rootFolderNotAccessible
-        case activeSemesterSyncFailed([String])
+        case activeSemesterSyncFailed([ActiveSemesterFailure])
         case missingDownloadedFilePayload(fileID: String)
 
         var errorDescription: String? {
@@ -143,8 +163,11 @@ actor SyncEngine {
                 return "Sync-Ordner konnte nicht aus dem Bookmark gelesen werden. Bitte in den Einstellungen neu auswaehlen."
             case .rootFolderNotAccessible:
                 return "Sync-Ordner ist aktuell nicht zugreifbar. Bitte in den Einstellungen erneut autorisieren."
-            case .activeSemesterSyncFailed(let errors):
-                let message = errors.prefix(3).joined(separator: " | ")
+            case .activeSemesterSyncFailed(let failures):
+                let message = failures
+                    .prefix(3)
+                    .map { "\($0.semesterID) [\($0.category.rawValue)]: \($0.message)" }
+                    .joined(separator: " | ")
                 return "Sync teilweise fehlgeschlagen: \(message)"
             case .missingDownloadedFilePayload(let fileID):
                 return "Download lieferte keinen Dateistrom fuer Datei \(fileID)."
@@ -248,26 +271,55 @@ actor SyncEngine {
     }
 
     private func performSync() async throws -> SyncSummary {
-        let configuration = await MainActor.run { settingsStore.configuration }
+        var configuration = await MainActor.run { settingsStore.configuration }
         guard let bookmark = configuration.rootFolderBookmark else {
             throw SyncEngineError.rootFolderNotConfigured
         }
 
-        let rootURL = try await resolveRootFolderURL(from: bookmark)
-        let didAccessScope = rootURL.startAccessingSecurityScopedResource()
+        var rootURL = try await resolveRootFolderURL(from: bookmark)
+        var didAccessScope = rootURL.startAccessingSecurityScopedResource()
+
+        if SyncSecurityScopePolicy.isRootFolderAccessDenied(
+            isAppSandboxed: isAppSandboxed(),
+            didAccessScope: didAccessScope
+        ) {
+            if didAccessScope {
+                rootURL.stopAccessingSecurityScopedResource()
+            }
+
+            let reauthorized = await repository.ensureRootFolderAccessByPromptingUserIfNeeded()
+            guard reauthorized else {
+                throw SyncEngineError.rootFolderNotAccessible
+            }
+
+            configuration = await MainActor.run { settingsStore.configuration }
+            guard let refreshedBookmark = configuration.rootFolderBookmark else {
+                throw SyncEngineError.rootFolderNotConfigured
+            }
+
+            rootURL = try await resolveRootFolderURL(from: refreshedBookmark)
+            didAccessScope = rootURL.startAccessingSecurityScopedResource()
+
+            if SyncSecurityScopePolicy.isRootFolderAccessDenied(
+                isAppSandboxed: isAppSandboxed(),
+                didAccessScope: didAccessScope
+            ) {
+                throw SyncEngineError.rootFolderNotAccessible
+            }
+        }
+
         defer {
             if didAccessScope {
                 rootURL.stopAccessingSecurityScopedResource()
             }
         }
-        if SyncSecurityScopePolicy.isRootFolderAccessDenied(
-            isAppSandboxed: isAppSandboxed(),
-            didAccessScope: didAccessScope
-        ) {
+
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        guard verifyRootFolderReadWriteAccess(rootURL) else {
             throw SyncEngineError.rootFolderNotAccessible
         }
 
-        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try ensureStateDirectoryExists()
 
         let activeSemesterIDs = configuration.activeSemesterIDs.sorted()
@@ -281,7 +333,7 @@ actor SyncEngine {
         var manifest = try loadManifest(baseURL: configuration.baseURL, rootURL: rootURL)
         var seenFileIDs: Set<String> = []
         var summary = SyncSummary()
-        var syncErrors: [String] = []
+        var syncErrors: [ActiveSemesterFailure] = []
         let activeSemesterIDsCanonical = Set(configuration.activeSemesterIDs.map(canonicalStudIPID))
 
         let semesterResult = try await repository.loadSemestersStaleWhileRevalidate(onRefresh: nil)
@@ -312,7 +364,13 @@ actor SyncEngine {
                 summary.downloadedFiles += semesterSummary.downloadedFiles
                 summary.skippedFiles += semesterSummary.skippedFiles
             } catch {
-                syncErrors.append("Semester \(semesterID): \(error.localizedDescription)")
+                syncErrors.append(
+                    ActiveSemesterFailure(
+                        semesterID: canonicalStudIPID(semesterID),
+                        category: classifyFailureCategory(for: error),
+                        message: error.localizedDescription
+                    )
+                )
             }
         }
 
@@ -687,6 +745,51 @@ actor SyncEngine {
         return nil
     }
 
+    private func classifyFailureCategory(for error: Error) -> ActiveSemesterFailure.Category {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return .offline
+            case .timedOut, .resourceUnavailable, .internationalRoamingOff:
+                return .serverTemporary
+            default:
+                return .unknown
+            }
+        }
+
+        if let apiError = error as? StudIPAPIClient.APIClientError {
+            switch apiError {
+            case .missingCredentials, .sandboxNetworkPermissionMissing, .invalidPath, .invalidResponse:
+                return .configuration
+            case .unauthorized:
+                return .unauthorized
+            case .httpStatus(let code, _, _):
+                if code == 401 || code == 403 {
+                    return .unauthorized
+                }
+                if code == 408 || code == 425 || code == 429 || (500...599).contains(code) {
+                    return .serverTemporary
+                }
+                return .unknown
+            }
+        }
+
+        if let syncError = error as? SyncEngineError {
+            switch syncError {
+            case .rootFolderNotConfigured:
+                return .configuration
+            case .couldNotResolveRootFolder, .rootFolderNotAccessible:
+                return .localAccess
+            case .activeSemesterSyncFailed(let failures):
+                return failures.first?.category ?? .unknown
+            case .missingDownloadedFilePayload:
+                return .serverTemporary
+            }
+        }
+
+        return .unknown
+    }
+
     private func manifestFileURL(baseURL: URL, rootURL: URL) -> URL {
         let baseURLKey = normalizedBaseURLKey(baseURL)
         let rootPath = rootURL.standardizedFileURL.path
@@ -751,6 +854,34 @@ actor SyncEngine {
 
         let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
         return (sandboxEntitlement as? Bool) == true
+    }
+
+    private func verifyRootFolderReadWriteAccess(_ rootURL: URL) -> Bool {
+        do {
+            _ = try fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        } catch {
+            AppLogger.error("Sync root listing failed: \(error.localizedDescription)")
+            return false
+        }
+
+        let probeURL = rootURL.appendingPathComponent("studipsync-access-\(UUID().uuidString).tmp", isDirectory: false)
+        let created = fileManager.createFile(atPath: probeURL.path, contents: Data(), attributes: nil)
+        guard created else {
+            AppLogger.error("Sync root write probe failed: createFile returned false")
+            return false
+        }
+
+        do {
+            let handle = try FileHandle(forWritingTo: probeURL)
+            defer { try? handle.close() }
+            try handle.write(contentsOf: Data("probe".utf8))
+            try fileManager.removeItem(at: probeURL)
+            return true
+        } catch {
+            AppLogger.error("Sync root write probe failed: \(error.localizedDescription)")
+            try? fileManager.removeItem(at: probeURL)
+            return false
+        }
     }
 
     private func cleanupRemovedLocalFiles(

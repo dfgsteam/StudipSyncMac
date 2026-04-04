@@ -8,18 +8,8 @@
 import XCTest
 
 final class StudipSyncUITests: XCTestCase {
-
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
@@ -34,10 +24,48 @@ final class StudipSyncUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        app.typeKey(",", modifierFlags: .command)
-
+        openSettingsWindow(using: app)
         let cacheButton = app.buttons["Cache leeren"]
         XCTAssertTrue(cacheButton.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Base-URL speichern"].exists)
+    }
+
+    @MainActor
+    func testManualSyncUpdatesVisibleStatus() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let syncButton = app.buttons["toolbar.syncNow"]
+        XCTAssertTrue(syncButton.waitForExistence(timeout: 5))
+
+        let statusLabel = app.staticTexts["sidebar.syncStatus"]
+        XCTAssertTrue(statusLabel.waitForExistence(timeout: 5))
+
+        syncButton.click()
+
+        let predicate = NSPredicate(format: "label != %@", "Idle")
+        expectation(for: predicate, evaluatedWith: statusLabel)
+        waitForExpectations(timeout: 10)
+
+        let current = statusLabel.label.lowercased()
+        XCTAssertTrue(
+            current.contains("synchronizing")
+                || current.contains("last successful sync")
+                || current.contains("error:")
+                || current.contains("offline")
+                || current.contains("running")
+        )
+    }
+
+    @MainActor
+    private func openSettingsWindow(using app: XCUIApplication) {
+        let appMenuBarItem = app.menuBars.menuBarItems.element(boundBy: 0)
+        XCTAssertTrue(appMenuBarItem.waitForExistence(timeout: 5))
+        appMenuBarItem.click()
+
+        let settingsPredicate = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Einst", "Settings")
+        let settingsItem = appMenuBarItem.menus.menuItems.matching(settingsPredicate).firstMatch
+        XCTAssertTrue(settingsItem.waitForExistence(timeout: 5))
+        settingsItem.click()
     }
 }

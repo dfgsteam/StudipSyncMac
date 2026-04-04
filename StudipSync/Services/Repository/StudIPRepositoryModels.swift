@@ -18,6 +18,11 @@ struct StudIPSemesterLoadResult {
     let source: StudIPSemesterDataSource
 }
 
+struct StudIPCourseLoadResult {
+    let courses: [CourseDTO]
+    let source: StudIPSemesterDataSource
+}
+
 enum StudIPRepositoryError: LocalizedError {
     case invalidPayloadPreview(String)
     case noCoursesForSemester(String)

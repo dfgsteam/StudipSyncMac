@@ -79,6 +79,27 @@ struct StudipSyncTests {
 
     @Test
     @MainActor
+    func metadataCachePersistsCoursesBySemester() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cache = MetadataCache(cacheRootURL: tempDir)
+        let baseURL = URL(string: "https://studip.example.edu")!
+        let semesterID = "semester-1"
+        let courses = [makeCourseDTO(id: "course-1", title: "Algo 1", semesterID: semesterID)]
+
+        try await cache.saveCourses(courses, for: semesterID, baseURL: baseURL)
+        let loadedCourses = try await cache.loadCourses(for: semesterID, baseURL: baseURL)
+        #expect(loadedCourses == courses)
+
+        try await cache.save(semesters: [SemesterDTO(id: semesterID, title: "SoSe 2026")], baseURL: baseURL)
+        let stillLoaded = try await cache.loadCourses(for: semesterID, baseURL: baseURL)
+        #expect(stillLoaded == courses)
+    }
+
+    @Test
+    @MainActor
     func keychainServiceRoundtripForAPIKeyAndBasicCredentials() throws {
         let service = KeychainService()
         let baseURL = URL(string: "https://studipsync-keychain-\(UUID().uuidString).example")!

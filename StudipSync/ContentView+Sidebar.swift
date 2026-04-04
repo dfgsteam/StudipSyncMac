@@ -42,6 +42,7 @@ extension ContentView {
                         Image(systemName: statusController.syncState.symbolName)
                         Text(statusController.syncState.statusText)
                             .lineLimit(1)
+                            .accessibilityIdentifier("sidebar.syncStatus")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)

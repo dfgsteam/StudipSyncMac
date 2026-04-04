@@ -4,13 +4,41 @@ import CryptoKit
 actor MetadataCache {
     struct Snapshot: Codable {
         let semesters: [SemesterDTO]
+        let coursesBySemesterID: [String: [CourseDTO]]
         let updatedAt: Date
         let version: Int
+
+        init(
+            semesters: [SemesterDTO],
+            coursesBySemesterID: [String: [CourseDTO]] = [:],
+            updatedAt: Date,
+            version: Int
+        ) {
+            self.semesters = semesters
+            self.coursesBySemesterID = coursesBySemesterID
+            self.updatedAt = updatedAt
+            self.version = version
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case semesters
+            case coursesBySemesterID
+            case updatedAt
+            case version
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            semesters = try container.decode([SemesterDTO].self, forKey: .semesters)
+            coursesBySemesterID = try container.decodeIfPresent([String: [CourseDTO]].self, forKey: .coursesBySemesterID) ?? [:]
+            updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+            version = try container.decode(Int.self, forKey: .version)
+        }
     }
 
     private let fileManager: FileManager
     private let cacheDirectory: URL
-    private let version = 2
+    private let version = 3
 
     init(fileManager: FileManager = .default, cacheRootURL: URL? = nil) {
         self.fileManager = fileManager
@@ -33,14 +61,57 @@ actor MetadataCache {
         }
 
         let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
-        return snapshot.version == version ? snapshot : nil
+        guard snapshot.version >= 1, snapshot.version <= version else {
+            return nil
+        }
+        return snapshot
     }
 
     func save(semesters: [SemesterDTO], baseURL: URL) async throws {
         try ensureCacheDirectoryExists()
         try migrateLegacyCacheIfNeeded(baseURL: baseURL)
 
-        let snapshot = Snapshot(semesters: semesters, updatedAt: Date(), version: version)
+        let existingCourses = try await load(baseURL: baseURL)?.coursesBySemesterID ?? [:]
+        let snapshot = Snapshot(
+            semesters: semesters,
+            coursesBySemesterID: existingCourses,
+            updatedAt: Date(),
+            version: version
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: cacheFileURL(for: baseURL), options: .atomic)
+        try cleanupLegacyCacheFiles(baseURL: baseURL)
+    }
+
+    func loadCourses(for semesterID: String, baseURL: URL) async throws -> [CourseDTO]? {
+        guard let snapshot = try await load(baseURL: baseURL) else {
+            return nil
+        }
+
+        let canonicalSemesterID = canonicalStudIPID(semesterID)
+        if let courses = snapshot.coursesBySemesterID[canonicalSemesterID] {
+            return courses
+        }
+        return snapshot.coursesBySemesterID[semesterID]
+    }
+
+    func saveCourses(_ courses: [CourseDTO], for semesterID: String, baseURL: URL) async throws {
+        try ensureCacheDirectoryExists()
+        try migrateLegacyCacheIfNeeded(baseURL: baseURL)
+
+        let existing = try await load(baseURL: baseURL)
+        let canonicalSemesterID = canonicalStudIPID(semesterID)
+
+        var coursesBySemesterID = existing?.coursesBySemesterID ?? [:]
+        coursesBySemesterID[canonicalSemesterID] = courses
+
+        let snapshot = Snapshot(
+            semesters: existing?.semesters ?? [],
+            coursesBySemesterID: coursesBySemesterID,
+            updatedAt: Date(),
+            version: version
+        )
+
         let data = try JSONEncoder().encode(snapshot)
         try data.write(to: cacheFileURL(for: baseURL), options: .atomic)
         try cleanupLegacyCacheFiles(baseURL: baseURL)

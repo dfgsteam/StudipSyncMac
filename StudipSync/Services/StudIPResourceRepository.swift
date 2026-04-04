@@ -7,6 +7,7 @@ actor StudIPResourceRepository {
     typealias SemesterDataSource = StudIPSemesterDataSource
     typealias RepositoryError = StudIPRepositoryError
     typealias SemesterLoadResult = StudIPSemesterLoadResult
+    typealias CourseLoadResult = StudIPCourseLoadResult
     typealias CourseParticipant = StudIPCourseParticipant
     typealias CourseFileRef = StudIPCourseFileRef
     typealias CourseChatThread = StudIPCourseChatThread
@@ -277,6 +278,29 @@ actor StudIPResourceRepository {
         try await courseRepository.fetchCourses(for: semesterID, offset: offset, limit: limit)
     }
 
+    func loadCoursesStaleWhileRevalidate(
+        for semesterID: String,
+        onRefresh: (@MainActor ([CourseDTO]) -> Void)? = nil
+    ) async throws -> CourseLoadResult {
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        let normalizedSemesterID = canonicalStudIPID(semesterID)
+
+        if let cachedCourses = try await metadataCache.loadCourses(for: normalizedSemesterID, baseURL: baseURL) {
+            Task {
+                await refreshCourses(
+                    baseURL: baseURL,
+                    semesterID: normalizedSemesterID,
+                    onRefresh: onRefresh
+                )
+            }
+            return CourseLoadResult(courses: cachedCourses, source: .cache)
+        }
+
+        let remoteCourses = try await fetchCourses(for: normalizedSemesterID, offset: 0, limit: 1000)
+        try await metadataCache.saveCourses(remoteCourses, for: normalizedSemesterID, baseURL: baseURL)
+        return CourseLoadResult(courses: remoteCourses, source: .remote)
+    }
+
     func fetchCourse(id: String) async throws -> CourseDTO {
         try await courseRepository.fetchCourse(id: id)
     }
@@ -422,6 +446,22 @@ actor StudIPResourceRepository {
             }
         } catch {
             AppLogger.error("Semester refresh failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func refreshCourses(
+        baseURL: URL,
+        semesterID: String,
+        onRefresh: (@MainActor ([CourseDTO]) -> Void)?
+    ) async {
+        do {
+            let remoteCourses = try await fetchCourses(for: semesterID, offset: 0, limit: 1000)
+            try await metadataCache.saveCourses(remoteCourses, for: semesterID, baseURL: baseURL)
+            if let onRefresh {
+                await onRefresh(remoteCourses)
+            }
+        } catch {
+            AppLogger.error("Course refresh failed for semester \(semesterID): \(error.localizedDescription)")
         }
     }
 
