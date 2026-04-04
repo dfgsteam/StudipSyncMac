@@ -1,5 +1,28 @@
 import Foundation
 
+enum SyncSchedulePlanner {
+    static func toleranceSeconds(
+        intervalMinutes: Int,
+        minimumToleranceSeconds: Double,
+        toleranceFactor: Double
+    ) -> Double {
+        let baseSeconds = Double(intervalMinutes * 60)
+        return max(minimumToleranceSeconds, baseSeconds * toleranceFactor)
+    }
+
+    static func nextDelaySeconds(
+        intervalMinutes: Int,
+        toleranceSeconds: Double,
+        minimumDelaySeconds: Double,
+        randomUnit: () -> Double = { Double.random(in: 0...1) }
+    ) -> Double {
+        let baseSeconds = Double(intervalMinutes * 60)
+        let clampedUnit = min(max(randomUnit(), 0), 1)
+        let signedJitter = (clampedUnit * 2 - 1) * toleranceSeconds
+        return max(minimumDelaySeconds, baseSeconds + signedJitter)
+    }
+}
+
 @MainActor
 final class SyncScheduler {
     private var task: Task<Void, Never>?
@@ -77,13 +100,18 @@ final class SyncScheduler {
     }
 
     private func scheduleToleranceSeconds(for intervalMinutes: Int) -> Double {
-        let baseSeconds = Double(intervalMinutes * 60)
-        return max(minimumToleranceSeconds, baseSeconds * toleranceFactor)
+        SyncSchedulePlanner.toleranceSeconds(
+            intervalMinutes: intervalMinutes,
+            minimumToleranceSeconds: minimumToleranceSeconds,
+            toleranceFactor: toleranceFactor
+        )
     }
 
     private func nextDelaySeconds(intervalMinutes: Int, toleranceSeconds: Double) -> Double {
-        let baseSeconds = Double(intervalMinutes * 60)
-        let randomizedTolerance = Double.random(in: 0...toleranceSeconds)
-        return max(minimumDelaySeconds, baseSeconds + randomizedTolerance)
+        SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: intervalMinutes,
+            toleranceSeconds: toleranceSeconds,
+            minimumDelaySeconds: minimumDelaySeconds
+        )
     }
 }

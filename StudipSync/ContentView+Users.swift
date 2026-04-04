@@ -193,11 +193,14 @@ extension ContentView {
         .padding(12)
         .task {
             await ensureBenutzerInitialLoad()
+            await loadSharedCoursesFromLocalCacheIfNeeded()
         }
         .task(id: rememberedUserIDsCSV) {
             await loadRememberedUsers()
         }
         .task(id: selectedUserID ?? "none") {
+            selectedUserCalendarDay = Calendar.current.startOfDay(for: Date())
+            await loadSharedCoursesFromLocalCacheIfNeeded()
             await loadSelectedUserDetailsIfNeeded()
         }
     }
@@ -526,10 +529,60 @@ extension ContentView {
             }
 
             GroupBox {
-                let events = userUpcomingEventsByID[normalizedUserID] ?? []
+                let sharedEntries = sharedCourseEntries(for: normalizedUserID)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("\(events.count) naechste Termine")
+                        Text("\(sharedEntries.count) gemeinsame Veranstaltungen")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        if isLoadingSharedCourses {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Button("Lokal aktualisieren") {
+                            Task {
+                                await rebuildSharedCoursesCache()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isLoadingSharedCourses)
+                    }
+
+                    if let sharedCoursesUpdatedAt {
+                        Text("Stand: \(Self.fileDateFormatter.string(from: sharedCoursesUpdatedAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let message = nonEmpty(sharedCoursesError) {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if sharedEntries.isEmpty {
+                        Text("Noch keine lokalen Daten. Mit \"Lokal aktualisieren\" werden Teilnehmer aller deiner belegten Kurse ausgewertet.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(sharedEntries) { entry in
+                            sharedCourseRow(entry)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Label("Gemeinsame Veranstaltungen", systemImage: "person.2.badge.gearshape")
+            }
+
+            GroupBox {
+                let events = userUpcomingEventsByID[normalizedUserID] ?? []
+                let filteredEvents = eventsForCalendarDay(events, day: selectedUserCalendarDay)
+                let undatedEvents = undatedEventsForCalendar(events)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(filteredEvents.count) Termine am Tag")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
                         if !events.isEmpty {
@@ -544,7 +597,34 @@ extension ContentView {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     } else {
-                        userEventCalendarTemplate(events: events)
+                        DatePicker(
+                            "Tag",
+                            selection: $selectedUserCalendarDay,
+                            displayedComponents: [.date]
+                        )
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                        .frame(maxWidth: 320, alignment: .leading)
+
+                        Text(Self.calendarDayOnlyFormatter.string(from: selectedUserCalendarDay))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if filteredEvents.isEmpty {
+                            Text("Keine Termine am ausgewaehlten Tag.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(filteredEvents.prefix(30)) { event in
+                                userEventCalendarRow(event)
+                            }
+                        }
+
+                        if !undatedEvents.isEmpty {
+                            Text("\(undatedEvents.count) Termine ohne Datum sind nicht tagbasiert filterbar.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -554,28 +634,44 @@ extension ContentView {
 
             GroupBox {
                 let scheduleEntries = userScheduleByID[normalizedUserID] ?? []
+                let filteredScheduleEntries = scheduleEntriesForCalendarDay(scheduleEntries, day: selectedUserCalendarDay)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("\(scheduleEntries.count) Stundenplan-Eintraege")
+                    Text("\(filteredScheduleEntries.count) Stundenplan-Eintraege am Tag")
                         .font(.subheadline.weight(.semibold))
                     if scheduleEntries.isEmpty {
                         Text("Keine Stundenplan-Eintraege gefunden.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(scheduleEntries.prefix(20)) { entry in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(nonEmpty(entry.title) ?? "Eintrag \(entry.id)")
-                                    .font(.callout.weight(.medium))
-                                    .lineLimit(2)
-                                Text(scheduleTimeLine(for: entry))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                        DatePicker(
+                            "Tag",
+                            selection: $selectedUserCalendarDay,
+                            displayedComponents: [.date]
+                        )
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                        .frame(maxWidth: 320, alignment: .leading)
+
+                        if filteredScheduleEntries.isEmpty {
+                            Text("Keine Stundenplan-Eintraege am ausgewaehlten Tag.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(filteredScheduleEntries.prefix(20)) { entry in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(nonEmpty(entry.title) ?? "Eintrag \(entry.id)")
+                                        .font(.callout.weight(.medium))
+                                        .lineLimit(2)
+                                    Text(scheduleTimeLine(for: entry))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.secondary.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(Color.secondary.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -1086,6 +1182,191 @@ extension ContentView {
 
     func userDisplayName(_ user: UserDTO) -> String {
         nonEmpty(user.preferredDisplayName) ?? "User \(user.id)"
+    }
+
+    func sharedCourseEntries(for userID: String) -> [SharedCourseParticipationCache.SharedCourseEntry] {
+        let normalizedID = canonicalStudIPID(userID)
+        let entries = sharedCoursesByUserID[normalizedID] ?? []
+        return entries.sorted { lhs, rhs in
+            let lhsSemester = nonEmpty(lhs.semesterTitle) ?? nonEmpty(lhs.semesterID) ?? ""
+            let rhsSemester = nonEmpty(rhs.semesterTitle) ?? nonEmpty(rhs.semesterID) ?? ""
+            if lhsSemester.localizedCaseInsensitiveCompare(rhsSemester) != .orderedSame {
+                return lhsSemester.localizedCaseInsensitiveCompare(rhsSemester) == .orderedAscending
+            }
+            return lhs.courseTitle.localizedCaseInsensitiveCompare(rhs.courseTitle) == .orderedAscending
+        }
+    }
+
+    @ViewBuilder
+    func sharedCourseRow(_ entry: SharedCourseParticipationCache.SharedCourseEntry) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let semesterTitle = nonEmpty(entry.semesterTitle) ?? nonEmpty(entry.semesterID) {
+                Text(semesterTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if nonEmpty(entry.semesterID) != nil {
+                Button(entry.courseTitle) {
+                    Task {
+                        await openSharedCourseInApp(entry)
+                    }
+                }
+                .buttonStyle(.link)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(entry.courseTitle)
+                    .font(.callout.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    func loadSharedCoursesFromLocalCacheIfNeeded() async {
+        guard selectedPage == .benutzer, selectedSemesterID == nil else { return }
+        if isLoadingSharedCourses { return }
+
+        do {
+            let baseURL = await repository.currentBaseURL()
+            let ownerID = try await currentUserIDForSharedCourseCache()
+            let namespaceKey = makeSharedCoursesNamespaceKey(baseURL: baseURL, ownerUserID: ownerID)
+
+            if sharedCoursesNamespaceKey == namespaceKey, !sharedCoursesByUserID.isEmpty {
+                return
+            }
+
+            if let snapshot = try await sharedCourseParticipationCache.load(baseURL: baseURL, ownerUserID: ownerID) {
+                applySharedCourseSnapshot(snapshot, namespaceKey: namespaceKey)
+            } else {
+                sharedCoursesByUserID = [:]
+                sharedCoursesUpdatedAt = nil
+                sharedCoursesNamespaceKey = namespaceKey
+            }
+        } catch {
+            sharedCoursesError = "Lokaler Shared-Course-Cache konnte nicht geladen werden: \(error.localizedDescription)"
+        }
+    }
+
+    func rebuildSharedCoursesCache() async {
+        guard selectedPage == .benutzer, selectedSemesterID == nil else { return }
+        if isLoadingSharedCourses { return }
+
+        isLoadingSharedCourses = true
+        sharedCoursesError = nil
+        defer { isLoadingSharedCourses = false }
+
+        do {
+            let baseURL = await repository.currentBaseURL()
+            let ownerID = try await currentUserIDForSharedCourseCache()
+            let semesterResult = try await repository.loadSemestersStaleWhileRevalidate()
+            let semesterTitleByID = Dictionary(
+                uniqueKeysWithValues: semesterResult.semesters.map { (canonicalStudIPID($0.id), $0.title) }
+            )
+
+            let myCourses = try await repository.fetchCoursesForUser(
+                userID: ownerID,
+                semesterID: nil,
+                offset: 0,
+                limit: 1000
+            )
+
+            var map: [String: [SharedCourseParticipationCache.SharedCourseEntry]] = [:]
+            map.reserveCapacity(512)
+
+            for course in myCourses {
+                let semesterID = nonEmpty(course.semesterID)
+                    ?? nonEmpty(course.startSemesterRef)
+                    ?? nonEmpty(course.endSemesterRef)
+                let canonicalSemesterID = semesterID.map(canonicalStudIPID)
+
+                let entry = SharedCourseParticipationCache.SharedCourseEntry(
+                    courseID: canonicalStudIPID(course.id),
+                    courseTitle: nonEmpty(course.title) ?? "Kurs \(course.id)",
+                    semesterID: canonicalSemesterID,
+                    semesterTitle: canonicalSemesterID.flatMap { semesterTitleByID[$0] }
+                )
+
+                let participants = try await repository.fetchCourseParticipants(
+                    courseID: course.id,
+                    offset: 0,
+                    limit: 1000
+                )
+
+                for participant in participants {
+                    let participantID = canonicalStudIPID(participant.userID)
+                    if participantID == ownerID {
+                        continue
+                    }
+                    map[participantID, default: []].append(entry)
+                }
+            }
+
+            for (userID, entries) in map {
+                var dedupByCourseID: [String: SharedCourseParticipationCache.SharedCourseEntry] = [:]
+                dedupByCourseID.reserveCapacity(entries.count)
+                for entry in entries {
+                    dedupByCourseID[entry.courseID] = entry
+                }
+                map[userID] = Array(dedupByCourseID.values)
+            }
+
+            let snapshot = SharedCourseParticipationCache.Snapshot(
+                ownerUserID: ownerID,
+                updatedAt: Date(),
+                version: 1,
+                entriesByUserID: map
+            )
+            try await sharedCourseParticipationCache.save(baseURL: baseURL, snapshot: snapshot)
+            applySharedCourseSnapshot(
+                snapshot,
+                namespaceKey: makeSharedCoursesNamespaceKey(baseURL: baseURL, ownerUserID: ownerID)
+            )
+        } catch {
+            sharedCoursesError = "Shared-Course-Cache konnte nicht aktualisiert werden: \(error.localizedDescription)"
+        }
+    }
+
+    func currentUserIDForSharedCourseCache() async throws -> String {
+        if let meUserID, !meUserID.isEmpty {
+            return canonicalStudIPID(meUserID)
+        }
+        let me = try await repository.fetchMe()
+        let canonicalID = canonicalStudIPID(me.id)
+        meUserID = canonicalID
+        return canonicalID
+    }
+
+    func applySharedCourseSnapshot(_ snapshot: SharedCourseParticipationCache.Snapshot, namespaceKey: String) {
+        sharedCoursesByUserID = snapshot.entriesByUserID
+        sharedCoursesUpdatedAt = snapshot.updatedAt
+        sharedCoursesNamespaceKey = namespaceKey
+    }
+
+    func makeSharedCoursesNamespaceKey(baseURL: URL, ownerUserID: String) -> String {
+        "\(baseURL.absoluteString.lowercased())|\(canonicalStudIPID(ownerUserID))"
+    }
+
+    func openSharedCourseInApp(_ entry: SharedCourseParticipationCache.SharedCourseEntry) async {
+        guard let semesterID = nonEmpty(entry.semesterID) else { return }
+
+        navigateToSidebarState(
+            SidebarNavigationState(
+                page: selectedSidebarPage ?? .start,
+                semesterID: semesterID,
+                courseID: nil
+            )
+        )
+
+        await loadCoursesForSelectedSemester()
+
+        if courses.contains(where: { canonicalStudIPID($0.id) == canonicalStudIPID(entry.courseID) }) {
+            selectSidebarCourse(entry.courseID)
+        }
     }
 
     func userSecondaryLine(_ user: UserDTO) -> String {

@@ -2,6 +2,33 @@ import Foundation
 import CryptoKit
 import Security
 
+struct SyncManifestEntryRecord: Equatable {
+    let fileID: String
+    let relativePath: String
+    let semesterID: String
+}
+
+enum SyncManifestCleanupPlanner {
+    static func staleFileIDs(
+        entries: [SyncManifestEntryRecord],
+        seenFileIDs: Set<String>,
+        activeSemesterIDs: Set<String>
+    ) -> Set<String> {
+        Set(
+            entries.compactMap { entry in
+                guard activeSemesterIDs.contains(canonicalStudIPID(entry.semesterID)) else { return nil }
+                return seenFileIDs.contains(entry.fileID) ? nil : entry.fileID
+            }
+        )
+    }
+}
+
+enum SyncSecurityScopePolicy {
+    static func isRootFolderAccessDenied(isAppSandboxed: Bool, didAccessScope: Bool) -> Bool {
+        isAppSandboxed && !didAccessScope
+    }
+}
+
 enum SyncPathPlanner {
     static func sanitizedPathComponent(_ raw: String) -> String {
         let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
@@ -174,7 +201,10 @@ actor SyncEngine {
                 rootURL.stopAccessingSecurityScopedResource()
             }
         }
-        if isAppSandboxed() && !didAccessScope {
+        if SyncSecurityScopePolicy.isRootFolderAccessDenied(
+            isAppSandboxed: isAppSandboxed(),
+            didAccessScope: didAccessScope
+        ) {
             throw SyncEngineError.rootFolderNotAccessible
         }
 
@@ -191,6 +221,7 @@ actor SyncEngine {
         var seenFileIDs: Set<String> = []
         var summary = SyncSummary()
         var syncErrors: [String] = []
+        let activeSemesterIDsCanonical = Set(configuration.activeSemesterIDs.map(canonicalStudIPID))
 
         let semesterResult = try await repository.loadSemestersStaleWhileRevalidate()
         let semestersByID = Dictionary(uniqueKeysWithValues: semesterResult.semesters.map { (canonicalStudIPID($0.id), $0) })
@@ -223,11 +254,14 @@ actor SyncEngine {
             }
         }
 
-        manifest.entries = manifest.entries.filter { fileID, entry in
-            if configuration.activeSemesterIDs.contains(entry.semesterID) {
-                return seenFileIDs.contains(fileID)
-            }
-            return true
+        let removedFileCount = try cleanupRemovedLocalFiles(
+            manifest: &manifest,
+            seenFileIDs: seenFileIDs,
+            activeSemesterIDs: activeSemesterIDsCanonical,
+            rootURL: rootURL
+        )
+        if removedFileCount > 0 {
+            AppLogger.info("Sync cleanup removed \(removedFileCount) local files that no longer exist remotely")
         }
 
         try saveManifest(manifest, baseURL: configuration.baseURL, rootURL: rootURL)
@@ -449,5 +483,85 @@ actor SyncEngine {
 
         let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
         return (sandboxEntitlement as? Bool) == true
+    }
+
+    private func cleanupRemovedLocalFiles(
+        manifest: inout SyncManifest,
+        seenFileIDs: Set<String>,
+        activeSemesterIDs: Set<String>,
+        rootURL: URL
+    ) throws -> Int {
+        let records = manifest.entries.map { fileID, entry in
+            SyncManifestEntryRecord(
+                fileID: fileID,
+                relativePath: entry.relativePath,
+                semesterID: entry.semesterID
+            )
+        }
+        let staleFileIDs = SyncManifestCleanupPlanner.staleFileIDs(
+            entries: records,
+            seenFileIDs: seenFileIDs,
+            activeSemesterIDs: activeSemesterIDs
+        )
+
+        guard !staleFileIDs.isEmpty else {
+            return 0
+        }
+
+        let normalizedRootPath = rootURL.standardizedFileURL.path
+        var removedCount = 0
+
+        for fileID in staleFileIDs {
+            guard let entry = manifest.entries[fileID] else {
+                continue
+            }
+
+            defer {
+                manifest.entries.removeValue(forKey: fileID)
+            }
+
+            let fileURL = rootURL
+                .appendingPathComponent(entry.relativePath, isDirectory: false)
+                .standardizedFileURL
+            let filePath = fileURL.path
+
+            guard filePath.hasPrefix(normalizedRootPath + "/") else {
+                continue
+            }
+
+            guard fileManager.fileExists(atPath: filePath) else {
+                continue
+            }
+
+            do {
+                try fileManager.removeItem(at: fileURL)
+                removedCount += 1
+                try pruneEmptyParentDirectories(startingAt: fileURL.deletingLastPathComponent(), rootURL: rootURL)
+            } catch {
+                AppLogger.error("Removing stale local file failed (\(fileID)): \(error.localizedDescription)")
+            }
+        }
+
+        return removedCount
+    }
+
+    private func pruneEmptyParentDirectories(startingAt directoryURL: URL, rootURL: URL) throws {
+        let normalizedRoot = rootURL.standardizedFileURL
+        var currentDirectory = directoryURL.standardizedFileURL
+
+        while currentDirectory.path.hasPrefix(normalizedRoot.path + "/") {
+            let children = try fileManager.contentsOfDirectory(
+                at: currentDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+
+            if !children.isEmpty {
+                break
+            }
+
+            try fileManager.removeItem(at: currentDirectory)
+            currentDirectory.deleteLastPathComponent()
+        }
     }
 }

@@ -33,90 +33,81 @@ extension ContentView {
     }
 
     var coursesColumn: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("Kurse im Semester", systemImage: "books.vertical")
-                    .font(.headline.weight(.semibold))
-                Spacer()
-                if isLoadingCourses {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text("\(filteredCoursesForList.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(appHeaderFill)
+        VStack(alignment: .leading, spacing: 12) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        TextField("Kurse lokal filtern (Titel, Kursnummer, ID)", text: $courseListSearchQuery)
+                            .textFieldStyle(.roundedBorder)
 
-            HStack(spacing: 8) {
-                TextField("Kurse filtern (Titel, Kursnummer, ID)", text: $courseListSearchQuery)
-                    .textFieldStyle(.roundedBorder)
-
-                if !courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button {
-                        courseListSearchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Filter leeren")
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(appPanelColor)
-
-            if let errorMessage = courseOverviewErrorMessage {
-                overviewMessageCard(errorMessage, isError: true)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                    .background(appPanelColor)
-            }
-
-            if filteredCoursesForList.isEmpty {
-                uiEmptyState(
-                    title: courseOverviewErrorMessage == nil ? "Keine Kurse gefunden" : "Kursliste nicht verfuegbar",
-                    message: courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? "Fuer dieses Semester wurden keine Kurse gefunden."
-                        : "Der aktuelle Filter liefert keine Treffer. Passe den Suchbegriff an.",
-                    systemImage: "book.closed"
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(12)
-                .background(appPanelColor)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(filteredCoursesForList) { course in
-                            courseRow(course, isSelected: selectedCourseID == course.id)
+                        if !courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Button {
+                                courseListSearchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Filter leeren")
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 10)
+
+                    HStack(spacing: 8) {
+                        if isLoadingCourses {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text("\(filteredCoursesForList.count) von \(courses.count) Kursen")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let selectedSemester {
+                            Text(selectedSemester.title)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    if let errorMessage = courseOverviewErrorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .defaultScrollAnchor(.top)
-                .background(appDetailPanelColor)
+            } label: {
+                Label("Semesteransicht", systemImage: "books.vertical")
             }
 
-            Text(courseStatusMessage)
+            GroupBox {
+                if filteredCoursesForList.isEmpty {
+                    uiEmptyState(
+                        title: courseOverviewErrorMessage == nil ? "Keine Kurse gefunden" : "Kursliste nicht verfuegbar",
+                        message: courseListSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? "Fuer dieses Semester wurden keine Kurse gefunden."
+                            : "Der aktuelle Filter liefert keine Treffer. Passe den Suchbegriff an.",
+                        systemImage: "book.closed"
+                    )
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(filteredCoursesForList) { course in
+                                courseRow(course, isSelected: selectedCourseID == course.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } label: {
+                Label("Kurse", systemImage: "list.bullet.rectangle")
+            }
+
+            Text("Status: \(courseStatusMessage)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(appHeaderFill)
+
+            Spacer(minLength: 0)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(appBorderColor.opacity(0.75), lineWidth: 1)
-        )
+        .padding(12)
     }
 
     var detailColumn: some View {
@@ -187,6 +178,8 @@ extension ContentView {
 
     func semesterStatusPlaceholder(for semester: SemesterDTO) -> some View {
         let entries = semesterScheduleEventsBySemesterID[semester.id] ?? []
+        let filteredEntries = eventsForCalendarDay(entries, day: selectedSemesterCalendarDay)
+        let undatedCount = undatedEventsForCalendar(entries).count
         let errorText = semesterScheduleErrorsBySemesterID[semester.id]
         let isLoading = loadingSemesterScheduleIDs.contains(semester.id)
         let loadedAt = semesterScheduleLoadedAtBySemesterID[semester.id]
@@ -224,15 +217,40 @@ extension ContentView {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(entries) { event in
-                                semesterScheduleRow(event)
+                    DatePicker(
+                        "Tag",
+                        selection: $selectedSemesterCalendarDay,
+                        displayedComponents: [.date]
+                    )
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .frame(maxWidth: 320, alignment: .leading)
+
+                    Text("\(filteredEntries.count) Termine am \(Self.calendarDayOnlyFormatter.string(from: selectedSemesterCalendarDay))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if filteredEntries.isEmpty {
+                        Text("Keine Termine am ausgewaehlten Tag.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 8) {
+                                ForEach(filteredEntries) { event in
+                                    semesterScheduleRow(event)
+                                }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 140, maxHeight: 320)
                     }
-                    .frame(minHeight: 140, maxHeight: 320)
+
+                    if undatedCount > 0 {
+                        Text("\(undatedCount) Termine ohne Datum werden hier nicht im Tagesfilter gezeigt.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 if let loadedAt {

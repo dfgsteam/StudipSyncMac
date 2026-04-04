@@ -11,6 +11,7 @@ final class AppContainer {
     let apiClient: StudIPAPIClient
     let resourceRepository: StudIPResourceRepository
     let metadataCache: MetadataCache
+    let sharedCourseParticipationCache: SharedCourseParticipationCache
     let debugWindowState: DebugWindowState
 
     init() {
@@ -18,6 +19,7 @@ final class AppContainer {
         let keychainService = KeychainService()
         let statusController = MenuBarStatusController()
         let metadataCache = MetadataCache()
+        let sharedCourseParticipationCache = SharedCourseParticipationCache()
         let apiClient = StudIPAPIClient(settingsStore: settingsStore, keychainService: keychainService)
         let resourceRepository = StudIPResourceRepository(
             apiClient: apiClient,
@@ -38,6 +40,7 @@ final class AppContainer {
         self.apiClient = apiClient
         self.resourceRepository = resourceRepository
         self.metadataCache = metadataCache
+        self.sharedCourseParticipationCache = sharedCourseParticipationCache
         self.debugWindowState = DebugWindowState()
     }
 }

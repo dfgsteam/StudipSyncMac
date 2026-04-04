@@ -26,8 +26,6 @@ enum SyncState: Equatable {
         switch self {
         case .error(let message):
             return message
-        case .success(let date):
-            return "Last successful sync: \(date.formatted(date: .abbreviated, time: .shortened))"
         default:
             return nil
         }

@@ -75,16 +75,20 @@ extension ContentView {
                         Button {
                             navigateToSidebarPage(page)
                         } label: {
-                            Label(page.title, systemImage: page.systemImage)
-                                .font(.body.weight(.medium))
-                                .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: 8) {
+                                Label(page.title, systemImage: page.systemImage)
+                                    .font(.body.weight(.medium))
+                                Spacer(minLength: 0)
+                            }
+                            .modifier(SidebarSelectionModifier(isActive: isSelectedMenuPage(page)))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Divider()
 
@@ -205,6 +209,7 @@ extension ContentView {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .contextMenu {
                             Button(semesterSelectionStore.isActive(semesterID: semester.id) ? "Fuer Sync deaktivieren" : "Fuer Sync aktivieren") {
@@ -213,6 +218,7 @@ extension ContentView {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             VStack(alignment: .leading, spacing: 2) {

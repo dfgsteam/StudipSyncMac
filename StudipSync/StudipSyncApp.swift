@@ -19,6 +19,7 @@ struct StudipSyncApp: App {
                 syncScheduler: container.syncScheduler,
                 semesterSelectionStore: container.semesterSelectionStore,
                 repository: container.resourceRepository,
+                sharedCourseParticipationCache: container.sharedCourseParticipationCache,
                 debugWindowState: container.debugWindowState
             )
             .onAppear {

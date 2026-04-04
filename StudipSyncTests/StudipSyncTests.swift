@@ -142,6 +142,68 @@ struct StudipSyncTests {
     }
 
     @Test
+    func syncManifestCleanupPlannerMarksOnlyStaleFilesInActiveSemesters() {
+        let entries = [
+            SyncManifestEntryRecord(fileID: "seen-active", relativePath: "a.txt", semesterID: "sem-a"),
+            SyncManifestEntryRecord(fileID: "stale-active", relativePath: "b.txt", semesterID: "sem-a"),
+            SyncManifestEntryRecord(fileID: "stale-inactive", relativePath: "c.txt", semesterID: "sem-b")
+        ]
+
+        let stale = SyncManifestCleanupPlanner.staleFileIDs(
+            entries: entries,
+            seenFileIDs: ["seen-active"],
+            activeSemesterIDs: ["sem-a"]
+        )
+
+        #expect(stale == ["stale-active"])
+    }
+
+    @Test
+    func syncSecurityScopePolicyDeniesAccessOnlyForSandboxWithoutGrantedScope() {
+        #expect(SyncSecurityScopePolicy.isRootFolderAccessDenied(isAppSandboxed: true, didAccessScope: false))
+        #expect(!SyncSecurityScopePolicy.isRootFolderAccessDenied(isAppSandboxed: true, didAccessScope: true))
+        #expect(!SyncSecurityScopePolicy.isRootFolderAccessDenied(isAppSandboxed: false, didAccessScope: false))
+    }
+
+    @Test
+    func syncSchedulePlannerUsesSymmetricToleranceWithoutPositiveBias() {
+        let lower = SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: 10,
+            toleranceSeconds: 30,
+            minimumDelaySeconds: 5,
+            randomUnit: { 0 }
+        )
+        let center = SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: 10,
+            toleranceSeconds: 30,
+            minimumDelaySeconds: 5,
+            randomUnit: { 0.5 }
+        )
+        let upper = SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: 10,
+            toleranceSeconds: 30,
+            minimumDelaySeconds: 5,
+            randomUnit: { 1 }
+        )
+
+        #expect(lower == 570)
+        #expect(center == 600)
+        #expect(upper == 630)
+    }
+
+    @Test
+    func syncSchedulePlannerHonorsMinimumDelay() {
+        let delay = SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: 0,
+            toleranceSeconds: 100,
+            minimumDelaySeconds: 5,
+            randomUnit: { 0 }
+        )
+
+        #expect(delay == 5)
+    }
+
+    @Test
     @MainActor
     func menuBarStatusControllerKeepsLastSuccessfulSyncDateAcrossStateChanges() {
         let controller = MenuBarStatusController()

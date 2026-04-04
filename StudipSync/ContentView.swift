@@ -64,6 +64,7 @@ struct ContentView: View {
     let syncScheduler: SyncScheduler
     let semesterSelectionStore: SemesterSelectionStore
     let repository: StudIPResourceRepository
+    let sharedCourseParticipationCache: SharedCourseParticipationCache
     let debugWindowState: DebugWindowState
 
     @Environment(\.openWindow) var openWindow
@@ -81,6 +82,8 @@ struct ContentView: View {
     @State var startScheduleError: String?
     @State var isLoadingStartSchedule = false
     @State var startScheduleLoadedDate: Date?
+    @State var selectedSemesterCalendarDay = Calendar.current.startOfDay(for: Date())
+    @State var selectedUserCalendarDay = Calendar.current.startOfDay(for: Date())
     @State var semesterScheduleEventsBySemesterID: [String: [EventDTO]] = [:]
     @State var semesterScheduleErrorsBySemesterID: [String: String] = [:]
     @State var loadingSemesterScheduleIDs: Set<String> = []
@@ -162,6 +165,11 @@ struct ContentView: View {
     @State var userExtrasErrorByID: [String: String] = [:]
     @State var rememberedUsersByID: [String: UserDTO] = [:]
     @State var isLoadingRememberedUsers = false
+    @State var sharedCoursesByUserID: [String: [SharedCourseParticipationCache.SharedCourseEntry]] = [:]
+    @State var sharedCoursesUpdatedAt: Date?
+    @State var sharedCoursesNamespaceKey: String?
+    @State var isLoadingSharedCourses = false
+    @State var sharedCoursesError: String?
     @State var institutionSearchQuery = ""
     @State var institutions: [InstituteDTO] = []
     @State var isLoadingInstitutions = false
@@ -203,12 +211,14 @@ struct ContentView: View {
         syncScheduler: SyncScheduler,
         semesterSelectionStore: SemesterSelectionStore,
         repository: StudIPResourceRepository,
+        sharedCourseParticipationCache: SharedCourseParticipationCache,
         debugWindowState: DebugWindowState
     ) {
         self.statusController = statusController
         self.syncScheduler = syncScheduler
         self.semesterSelectionStore = semesterSelectionStore
         self.repository = repository
+        self.sharedCourseParticipationCache = sharedCourseParticipationCache
         self.debugWindowState = debugWindowState
         self._semesterViewModel = State(initialValue: SemesterListViewModel(repository: repository))
     }
@@ -221,6 +231,7 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
                 } content: {
                     coursesColumn
+                        .navigationSplitViewColumnWidth(min: 340, ideal: 420, max: 560)
                 } detail: {
                     detailColumn
                 }
@@ -237,6 +248,7 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
                 } content: {
                     contentForSelectedPage
+                        .navigationSplitViewColumnWidth(min: 340, ideal: 420, max: 560)
                 } detail: {
                     detailForSelectedPage
                 }
@@ -261,6 +273,7 @@ struct ContentView: View {
         }
         .task(id: selectedSemesterID) {
             debugWindowState.updateSelection(semesterID: selectedSemesterID, courseID: selectedCourseID)
+            selectedSemesterCalendarDay = Calendar.current.startOfDay(for: Date())
             await loadCoursesForSelectedSemester()
         }
         .task(id: selectedCourseID) {
@@ -324,6 +337,7 @@ struct ContentView: View {
         syncScheduler: container.syncScheduler,
         semesterSelectionStore: container.semesterSelectionStore,
         repository: container.resourceRepository,
+        sharedCourseParticipationCache: container.sharedCourseParticipationCache,
         debugWindowState: container.debugWindowState
     )
 }

@@ -1,4 +1,5 @@
 import AppKit
+import Security
 import SwiftUI
 
 extension ContentView {
@@ -177,10 +178,26 @@ extension ContentView {
                     await MainActor.run {
                         downloadingFileIDs.remove(fileRef.id)
                         let didAccessScope = syncedURL.startAccessingSecurityScopedResource()
-                        NSWorkspace.shared.open(syncedURL)
-                        if didAccessScope {
-                            syncedURL.stopAccessingSecurityScopedResource()
+                        defer {
+                            if didAccessScope {
+                                syncedURL.stopAccessingSecurityScopedResource()
+                            }
                         }
+
+                        if isAppSandboxed() && !didAccessScope {
+                            let message = "Kein Zugriff auf lokale Sync-Datei. Bitte Sync-Ordner in den Einstellungen erneut autorisieren."
+                            fileDownloadErrorsByFileID[fileRef.id] = message
+                            fileErrorsByContextKey[contextKey] = message
+                            return
+                        }
+
+                        if !NSWorkspace.shared.open(syncedURL) {
+                            let message = "Datei konnte lokal nicht geoeffnet werden."
+                            fileDownloadErrorsByFileID[fileRef.id] = message
+                            fileErrorsByContextKey[contextKey] = message
+                            return
+                        }
+
                         fileDownloadErrorsByFileID[fileRef.id] = nil
                         fileErrorsByContextKey[contextKey] = nil
                     }
@@ -228,8 +245,15 @@ extension ContentView {
                             previous.stopAccessingSecurityScopedResource()
                             quickLookSecurityScopedURL = nil
                         }
-                        if syncedURL.startAccessingSecurityScopedResource() {
+                        let didAccessScope = syncedURL.startAccessingSecurityScopedResource()
+                        if didAccessScope {
                             quickLookSecurityScopedURL = syncedURL
+                        } else if isAppSandboxed() {
+                            previewingFileIDs.remove(fileRef.id)
+                            let message = "Kein Zugriff auf lokale Sync-Datei. Bitte Sync-Ordner in den Einstellungen erneut autorisieren."
+                            filePreviewErrorsByFileID[fileRef.id] = message
+                            fileErrorsByContextKey[contextKey] = message
+                            return
                         }
                         previewingFileIDs.remove(fileRef.id)
                         selectedQuickLookFile = QuickLookPreviewFile(
@@ -268,6 +292,15 @@ extension ContentView {
                 }
             }
         }
+    }
+
+    func isAppSandboxed() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
+        return (sandboxEntitlement as? Bool) == true
     }
 
     func makeDownloadURL(for fileRef: CourseFileRefDTO) throws -> URL {
@@ -401,6 +434,26 @@ extension ContentView {
         }
 
         return deduped
+    }
+
+    func eventsForCalendarDay(_ events: [EventDTO], day: Date) -> [EventDTO] {
+        let calendar = Calendar.current
+        return sortUserEventsForDisplay(events).filter { event in
+            guard let start = parseAPIDate(event.start) else { return false }
+            return calendar.isDate(start, inSameDayAs: day)
+        }
+    }
+
+    func undatedEventsForCalendar(_ events: [EventDTO]) -> [EventDTO] {
+        events.filter { parseAPIDate($0.start) == nil }
+    }
+
+    func scheduleEntriesForCalendarDay(_ entries: [ScheduleEntryDTO], day: Date) -> [ScheduleEntryDTO] {
+        let calendar = Calendar.current
+        return sortUserScheduleForDisplay(entries).filter { entry in
+            guard let start = parseAPIDate(entry.start) else { return false }
+            return calendar.isDate(start, inSameDayAs: day)
+        }
     }
 
     func filterEventsToSemester(_ events: [EventDTO], semester: SemesterDTO) -> [EventDTO] {
@@ -667,6 +720,13 @@ extension ContentView {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static let calendarDayOnlyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .none
         return formatter
     }()
 }
