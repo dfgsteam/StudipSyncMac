@@ -7,6 +7,32 @@ enum SyncState: Equatable {
     case error(String)
     case offline
 
+    var statusTitle: String {
+        switch self {
+        case .idle:
+            return "Idle"
+        case .running:
+            return "Running"
+        case .success:
+            return "Success"
+        case .error:
+            return "Error"
+        case .offline:
+            return "Offline"
+        }
+    }
+
+    var statusDetail: String? {
+        switch self {
+        case .error(let message):
+            return message
+        case .success(let date):
+            return "Last successful sync: \(date.formatted(date: .abbreviated, time: .shortened))"
+        default:
+            return nil
+        }
+    }
+
     var statusText: String {
         switch self {
         case .idle:

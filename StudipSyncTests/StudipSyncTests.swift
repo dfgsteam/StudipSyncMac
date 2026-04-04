@@ -142,6 +142,26 @@ struct StudipSyncTests {
     }
 
     @Test
+    @MainActor
+    func menuBarStatusControllerKeepsLastSuccessfulSyncDateAcrossStateChanges() {
+        let controller = MenuBarStatusController()
+        #expect(controller.lastSuccessfulSyncAt == nil)
+
+        controller.setSuccess()
+        let firstSuccessDate = controller.lastSuccessfulSyncAt
+        #expect(firstSuccessDate != nil)
+
+        controller.setRunning()
+        #expect(controller.lastSuccessfulSyncAt == firstSuccessDate)
+
+        controller.setOffline()
+        #expect(controller.lastSuccessfulSyncAt == firstSuccessDate)
+
+        controller.setError("failure")
+        #expect(controller.lastSuccessfulSyncAt == firstSuccessDate)
+    }
+
+    @Test
     func apiPathResolverBuildsCanonicalCoursesURLFromHostBaseURL() {
         let baseURL = URL(string: "https://studip.uni-goettingen.de")!
         let url = StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: "/v1/courses", queryItems: [])

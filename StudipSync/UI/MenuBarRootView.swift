@@ -6,8 +6,19 @@ struct MenuBarRootView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(statusController.syncState.statusText)
+            Text(statusController.statusLineText)
                 .font(.headline)
+
+            Text(statusController.lastSuccessfulSyncLineText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if let detail = statusController.statusDetailText {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
 
             Divider()
 
