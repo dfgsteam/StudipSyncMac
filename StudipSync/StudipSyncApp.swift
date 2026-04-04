@@ -31,6 +31,9 @@ struct StudipSyncApp: App {
                     }
                 }
             }
+            .onChange(of: container.settingsStore.configuration.syncIntervalMinutes) { _, newValue in
+                container.syncScheduler.start(intervalMinutes: newValue)
+            }
         }
         .windowStyle(.hiddenTitleBar)
     }

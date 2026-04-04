@@ -92,12 +92,7 @@ actor StudIPCourseRepository {
             serverResult = allUserCourses
         }
 
-        let filtered = serverResult.filter { $0.matches(semesterID: normalizedSemesterID) }
-        if filtered.isEmpty {
-            throw StudIPRepositoryError.noCoursesForSemester(normalizedSemesterID)
-        }
-
-        return filtered
+        return serverResult.filter { $0.matches(semesterID: normalizedSemesterID) }
     }
 
     func fetchCoursesForUser(

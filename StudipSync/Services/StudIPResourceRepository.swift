@@ -10,6 +10,7 @@ actor StudIPResourceRepository {
     typealias CourseChatThread = StudIPCourseChatThread
     typealias CourseWikiPage = StudIPCourseWikiPage
     typealias CourseForumCategory = ForumCategoryDTO
+    typealias CourseMembership = CourseMembershipDTO
 
     private let defaultSemesterOffset = 0
     private let defaultSemesterLimit = 100
@@ -250,6 +251,10 @@ actor StudIPResourceRepository {
 
     func fetchCourseParticipants(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseParticipant] {
         try await courseSectionRepository.fetchCourseParticipants(courseID: courseID, offset: offset, limit: limit)
+    }
+
+    func fetchCourseMembership(id: String) async throws -> CourseMembership {
+        try await courseSectionRepository.fetchCourseMembership(id: id)
     }
 
     func fetchUsersByIDs(_ userIDs: [String]) async -> [String: UserDTO] {

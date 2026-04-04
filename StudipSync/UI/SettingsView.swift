@@ -6,6 +6,7 @@ struct SettingsView: View {
     let keychainService: KeychainService
 
     @State private var baseURLText: String = ""
+    @State private var apiKeyText: String = ""
     @State private var usernameText: String = ""
     @State private var passwordText: String = ""
     @State private var message: String = ""
@@ -21,17 +22,29 @@ struct SettingsView: View {
                     saveBaseURL()
                 }
 
+                SecureField("API-Key", text: $apiKeyText)
+
+                HStack {
+                    Button("API-Key speichern") {
+                        saveAPIKey()
+                    }
+
+                    Button("Zugangsdaten entfernen") {
+                        deleteAllCredentials()
+                    }
+                }
+
+                Divider()
+
+                Text("Optionaler Fallback fuer Instanzen ohne API-Key-Auth:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 TextField("Username", text: $usernameText)
                 SecureField("Passwort", text: $passwordText)
 
-                HStack {
-                    Button("Login speichern") {
-                        saveCredentials()
-                    }
-
-                    Button("Login entfernen") {
-                        deleteCredentials()
-                    }
+                Button("Fallback-Login speichern") {
+                    saveBasicCredentials()
                 }
             }
 
@@ -142,9 +155,27 @@ struct SettingsView: View {
 
         settingsStore.updateBaseURL(normalized)
         message = "Base-URL gespeichert."
+        loadCredentials()
     }
 
-    private func saveCredentials() {
+    private func saveAPIKey() {
+        let apiKey = apiKeyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else {
+            message = "Bitte API-Key eingeben."
+            return
+        }
+
+        do {
+            try keychainService.saveAPIKey(apiKey, for: settingsStore.configuration.baseURL)
+            message = "API-Key sicher gespeichert."
+            AppLogger.secretRedacted("API key updated")
+        } catch {
+            message = "API-Key konnte nicht gespeichert werden."
+            AppLogger.error("Saving API key failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func saveBasicCredentials() {
         let username = usernameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty, !passwordText.isEmpty else {
             message = "Bitte Username und Passwort eingeben."
@@ -154,7 +185,7 @@ struct SettingsView: View {
         do {
             let credentials = HTTPBasicCredentials(username: username, password: passwordText)
             try keychainService.saveCredentials(credentials, for: settingsStore.configuration.baseURL)
-            message = "Login sicher gespeichert."
+            message = "Fallback-Login sicher gespeichert."
             AppLogger.secretRedacted("Credentials updated")
         } catch {
             message = "Login konnte nicht gespeichert werden."
@@ -162,28 +193,27 @@ struct SettingsView: View {
         }
     }
 
-    private func deleteCredentials() {
+    private func deleteAllCredentials() {
         do {
             try keychainService.deleteCredentials(for: settingsStore.configuration.baseURL)
+            apiKeyText = ""
             usernameText = ""
             passwordText = ""
-            message = "Login entfernt."
+            message = "Zugangsdaten entfernt."
         } catch {
-            message = "Login konnte nicht entfernt werden."
+            message = "Zugangsdaten konnten nicht entfernt werden."
             AppLogger.error("Deleting credentials failed: \(error.localizedDescription)")
         }
     }
 
     private func loadCredentials() {
         do {
-            if let credentials = try keychainService.readCredentials(for: settingsStore.configuration.baseURL) {
-                usernameText = credentials.username
-                passwordText = credentials.password
-            } else {
-                usernameText = ""
-                passwordText = ""
-            }
+            let stored = try keychainService.readStoredCredentials(for: settingsStore.configuration.baseURL)
+            apiKeyText = stored?.apiKey ?? ""
+            usernameText = stored?.username ?? ""
+            passwordText = stored?.password ?? ""
         } catch {
+            apiKeyText = ""
             usernameText = ""
             passwordText = ""
             AppLogger.error("Reading credentials failed: \(error.localizedDescription)")

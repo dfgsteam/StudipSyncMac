@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 actor MetadataCache {
     struct Snapshot: Codable {
@@ -23,6 +24,9 @@ actor MetadataCache {
     }
 
     func load(baseURL: URL) async throws -> Snapshot? {
+        try ensureCacheDirectoryExists()
+        try migrateLegacyCacheIfNeeded(baseURL: baseURL)
+
         let url = cacheFileURL(for: baseURL)
         guard let data = try? Data(contentsOf: url) else {
             return nil
@@ -33,22 +37,122 @@ actor MetadataCache {
     }
 
     func save(semesters: [SemesterDTO], baseURL: URL) async throws {
-        try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        try ensureCacheDirectoryExists()
+        try migrateLegacyCacheIfNeeded(baseURL: baseURL)
+
         let snapshot = Snapshot(semesters: semesters, updatedAt: Date(), version: version)
         let data = try JSONEncoder().encode(snapshot)
         try data.write(to: cacheFileURL(for: baseURL), options: .atomic)
+        try cleanupLegacyCacheFiles(baseURL: baseURL)
     }
 
     func clear(baseURL: URL) throws {
+        try ensureCacheDirectoryExists()
         let url = cacheFileURL(for: baseURL)
         if fileManager.fileExists(atPath: url.path()) {
             try fileManager.removeItem(at: url)
         }
+        try cleanupLegacyCacheFiles(baseURL: baseURL)
     }
 
     private func cacheFileURL(for baseURL: URL) -> URL {
         let host = (baseURL.host ?? "default").lowercased()
-        let pathHash = String(baseURL.path.hashValue.magnitude)
-        return cacheDirectory.appendingPathComponent("metadata.\(host).\(pathHash).json")
+        let stableKey = stableCacheKey(for: baseURL)
+        return cacheDirectory.appendingPathComponent("metadata.\(host).\(stableKey).json")
+    }
+
+    private func stableCacheKey(for baseURL: URL) -> String {
+        let normalizedBaseURL = normalizedBaseURLString(baseURL)
+        let digest = SHA256.hash(data: Data(normalizedBaseURL.utf8))
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func normalizedBaseURLString(_ baseURL: URL) -> String {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return baseURL.absoluteString.lowercased()
+        }
+
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        components.query = nil
+        components.fragment = nil
+
+        var normalizedPath = components.path
+        if normalizedPath != "/" {
+            normalizedPath = normalizedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            components.path = normalizedPath.isEmpty ? "" : "/\(normalizedPath)"
+        }
+
+        return components.string ?? baseURL.absoluteString.lowercased()
+    }
+
+    private func ensureCacheDirectoryExists() throws {
+        try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+    }
+
+    private func migrateLegacyCacheIfNeeded(baseURL: URL) throws {
+        let stableURL = cacheFileURL(for: baseURL)
+        guard !fileManager.fileExists(atPath: stableURL.path()) else {
+            try cleanupLegacyCacheFiles(baseURL: baseURL)
+            return
+        }
+
+        let legacyURLs = try legacyCacheFileURLs(baseURL: baseURL)
+        guard !legacyURLs.isEmpty else {
+            return
+        }
+
+        let sourceURL = legacyURLs.max { lhs, rhs in
+            let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return lhsDate < rhsDate
+        } ?? legacyURLs[0]
+
+        do {
+            try fileManager.moveItem(at: sourceURL, to: stableURL)
+        } catch {
+            try fileManager.copyItem(at: sourceURL, to: stableURL)
+            try? fileManager.removeItem(at: sourceURL)
+        }
+
+        try cleanupLegacyCacheFiles(baseURL: baseURL)
+    }
+
+    private func cleanupLegacyCacheFiles(baseURL: URL) throws {
+        let legacyURLs = try legacyCacheFileURLs(baseURL: baseURL)
+        for url in legacyURLs {
+            try? fileManager.removeItem(at: url)
+        }
+    }
+
+    private func legacyCacheFileURLs(baseURL: URL) throws -> [URL] {
+        guard fileManager.fileExists(atPath: cacheDirectory.path()) else {
+            return []
+        }
+
+        let host = (baseURL.host ?? "default").lowercased()
+        let prefix = "metadata.\(host)."
+        let suffix = ".json"
+
+        let contents = try fileManager.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+
+        return contents.filter { url in
+            let name = url.lastPathComponent
+            guard name.hasPrefix(prefix), name.hasSuffix(suffix) else {
+                return false
+            }
+
+            let payload = name.dropFirst(prefix.count).dropLast(suffix.count)
+            guard !payload.isEmpty else {
+                return false
+            }
+
+            // Legacy filenames used hashValue.magnitude (digits only).
+            return payload.allSatisfy(\.isNumber)
+        }
     }
 }

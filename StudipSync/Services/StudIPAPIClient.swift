@@ -85,6 +85,20 @@ struct StudIPHTTPResponse {
 }
 
 final class StudIPAPIClient {
+    private enum AuthorizationHeader {
+        case apiKey(String)
+        case basic(HTTPBasicCredentials)
+
+        var redactedHeaderValue: String {
+            switch self {
+            case .apiKey:
+                return "Authorization: Bearer <REDACTED_API_KEY>"
+            case .basic:
+                return "Authorization: Basic <REDACTED_BASIC>"
+            }
+        }
+    }
+
     enum APIClientError: LocalizedError {
         case invalidPath(String)
         case missingCredentials
@@ -98,11 +112,11 @@ final class StudIPAPIClient {
             case .invalidPath(let requestReference):
                 return "Ungueltiger API-Pfad. Request: \(requestReference)"
             case .missingCredentials:
-                return "Kein Login hinterlegt. Bitte Username/Passwort speichern."
+                return "Keine Zugangsdaten hinterlegt. Bitte API-Key (oder Login als Fallback) speichern."
             case .invalidResponse(let requestURL):
                 return "Ungueltige API-Antwort. URL: \(requestURL)"
             case .unauthorized(let requestURL):
-                return "Autorisierung fehlgeschlagen (Username/Passwort pruefen). URL: \(requestURL)"
+                return "Autorisierung fehlgeschlagen (API-Key/Login pruefen). URL: \(requestURL)"
             case .sandboxNetworkPermissionMissing:
                 return "App-Sandbox blockiert Netzwerk. Aktiviere in den Target Capabilities: Outgoing Connections (Client)."
             case .httpStatus(let code, let body, let requestURL):
@@ -210,13 +224,13 @@ final class StudIPAPIClient {
             throw APIClientError.invalidPath(requestReference(baseURL: baseURL, path: path, queryItems: queryItems))
         }
 
-        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+        guard let authorizationHeader = try await resolveAuthorizationHeader(for: baseURL) else {
             throw APIClientError.missingCredentials
         }
 
         return try await send(
             url: url,
-            credentials: credentials,
+            authorizationHeader: authorizationHeader,
             method: method,
             body: body,
             acceptHeader: acceptHeader,
@@ -240,13 +254,13 @@ final class StudIPAPIClient {
             throw APIClientError.invalidPath("\(baseURL.absoluteString) | \(path)")
         }
 
-        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+        guard let authorizationHeader = try await resolveAuthorizationHeader(for: baseURL) else {
             throw APIClientError.missingCredentials
         }
 
         return try await send(
             url: url,
-            credentials: credentials,
+            authorizationHeader: authorizationHeader,
             method: method,
             body: body,
             acceptHeader: acceptHeader,
@@ -270,12 +284,9 @@ final class StudIPAPIClient {
             throw APIClientError.invalidPath(requestReference(baseURL: baseURL, path: path, queryItems: queryItems))
         }
 
-        guard let credentials = try keychainService.readCredentials(for: baseURL) else {
+        guard let authorizationHeader = try await resolveAuthorizationHeader(for: baseURL) else {
             throw APIClientError.missingCredentials
         }
-
-        // Never leak live credentials in debug output.
-        let authorizationHeader = "Authorization: Basic <REDACTED>"
 
         var parts = [
             "curl",
@@ -284,7 +295,7 @@ final class StudIPAPIClient {
             method.rawValue,
             "'\(shellEscaped(url.absoluteString))'",
             "-H",
-            "'\(shellEscaped(authorizationHeader))'"
+            "'\(shellEscaped(authorizationHeader.redactedHeaderValue))'"
         ]
 
         if let contentTypeHeader {
@@ -347,7 +358,7 @@ final class StudIPAPIClient {
 
     private func send(
         url: URL,
-        credentials: HTTPBasicCredentials,
+        authorizationHeader: AuthorizationHeader,
         method: StudIPHTTPMethod,
         body: Data?,
         acceptHeader: String?,
@@ -367,9 +378,14 @@ final class StudIPAPIClient {
             request.httpBody = body
         }
 
-        let raw = "\(credentials.username):\(credentials.password)"
-        let token = Data(raw.utf8).base64EncodedString()
-        request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
+        switch authorizationHeader {
+        case .apiKey(let apiKey):
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .basic(let credentials):
+            let raw = "\(credentials.username):\(credentials.password)"
+            let token = Data(raw.utf8).base64EncodedString()
+            request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
+        }
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -416,6 +432,18 @@ final class StudIPAPIClient {
 
     private func shellEscaped(_ string: String) -> String {
         string.replacingOccurrences(of: "'", with: "'\\''")
+    }
+
+    private func resolveAuthorizationHeader(for baseURL: URL) async throws -> AuthorizationHeader? {
+        if let apiKey = try keychainService.readAPIKey(for: baseURL) {
+            return .apiKey(apiKey)
+        }
+
+        if let basic = try keychainService.readCredentials(for: baseURL) {
+            return .basic(basic)
+        }
+
+        return nil
     }
 
     private func requestReference(baseURL: URL, path: String, queryItems: [URLQueryItem]) -> String {

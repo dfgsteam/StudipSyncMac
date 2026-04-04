@@ -151,16 +151,10 @@ actor StudIPCourseSectionRepository {
     }
 
     func fetchCourseParticipants(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [StudIPCourseParticipant] {
-        let data = try await fetchCourseSectionCollection(
+        let memberships = try await fetchCourseMemberships(
             courseID: courseID,
-            suffix: "memberships",
             offset: offset,
             limit: limit
-        )
-
-        let memberships: [CourseMembershipDTO] = try responseDecoder.parseCollection(
-            from: data,
-            fallbackCollectionKeys: ["data", "memberships", "course-memberships", "collection", "items"]
         )
 
         let uniqueUserIDs = Array(Set(memberships.map(\.userID)))
@@ -196,6 +190,32 @@ actor StudIPCourseSectionRepository {
             }
             return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
         }
+    }
+
+    func fetchCourseMemberships(courseID: String, offset: Int = 0, limit: Int = 1000) async throws -> [CourseMembershipDTO] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let escapedID = normalizedCourseID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedCourseID
+        let data = try await apiClient.performRequest(
+            path: "/v1/courses/\(escapedID)/memberships",
+            queryItems: [
+                URLQueryItem(name: "page[offset]", value: String(offset)),
+                URLQueryItem(name: "page[limit]", value: String(limit))
+            ]
+        )
+
+        return try responseDecoder.parseCollection(
+            from: data,
+            fallbackCollectionKeys: CourseMembershipResource.fallbackCollectionKeys
+        )
+    }
+
+    func fetchCourseMembership(id: String) async throws -> CourseMembershipDTO {
+        let escapedID = StudIPRepositoryUtilities.escapedPathID(id)
+        let data = try await apiClient.performRequest(path: "/v1/course-memberships/\(escapedID)")
+        return try responseDecoder.parseEntity(
+            from: data,
+            fallbackObjectKeys: CourseMembershipResource.fallbackCollectionKeys + ["data", "item"]
+        )
     }
 
     private func fetchCourseSectionCollection(courseID: String, suffix: String, offset: Int, limit: Int) async throws -> Data {
