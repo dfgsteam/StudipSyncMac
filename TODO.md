@@ -13,3 +13,11 @@
 - [x] SyncScheduler: Tolerance-Strategie ohne systematischen Drift umsetzen (Intervall soll nicht dauerhaft nach hinten wandern).
 - [x] Menu-Bar: doppelte "letzter erfolgreicher Sync"-Ausgabe bei Success bereinigen.
 - [x] Tests: kritische Sync-Pfade ergaenzen (Datei-Loeschung/Markierung, Security-Scoped-Fehlerpfad, Scheduler-Tolerance).
+
+## phase 5 closeout (2026-04-04)
+
+- [x] Retry-Strategie inkl. Fehlerklassifikation im SyncScheduler umgesetzt.
+- [x] Resume nach Wake/Sleep im Scheduler umgesetzt.
+- [x] "Cache leeren" in Settings implementiert (Metadata + Shared-Courses Cache).
+- [x] Unit-/Integrations-/UI-Smoke-Testabdeckung erweitert.
+- [x] Release-Checkliste erstellt (`RELEASE_CHECKLIST.md`).
