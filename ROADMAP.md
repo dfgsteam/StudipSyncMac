@@ -8,7 +8,8 @@ Eine stabile, akkusparende macOS Menu-Bar-App, die Dateien aus konfigurierbaren 
 ## Status
 - Phase 0: abgeschlossen (2026-04-04)
 - Phase 1: abgeschlossen (2026-04-04)
-- Phase 2-5: offen
+- Phase 2: abgeschlossen (2026-04-04)
+- Phase 3-5: offen
 
 ## Phase 0: Fundament (Woche 1)
 Zeitraum: 2026-04-01 bis 2026-04-07

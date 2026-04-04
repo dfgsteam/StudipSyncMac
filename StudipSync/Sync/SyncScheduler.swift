@@ -42,7 +42,24 @@ final class SyncScheduler {
 
     private func runSyncWithStatusUpdate() async {
         statusController?.setRunning()
-        await syncEngine.runSync()
-        statusController?.setSuccess()
+        do {
+            let didRun = try await syncEngine.runSync()
+            if didRun {
+                statusController?.setSuccess()
+            }
+        } catch let urlError as URLError {
+            if urlError.code == .notConnectedToInternet
+                || urlError.code == .networkConnectionLost
+                || urlError.code == .cannotFindHost
+                || urlError.code == .cannotConnectToHost {
+                statusController?.setOffline()
+            } else {
+                statusController?.setError(urlError.localizedDescription)
+            }
+            AppLogger.error("Sync failed: \(urlError.localizedDescription)")
+        } catch {
+            statusController?.setError(error.localizedDescription)
+            AppLogger.error("Sync failed: \(error.localizedDescription)")
+        }
     }
 }

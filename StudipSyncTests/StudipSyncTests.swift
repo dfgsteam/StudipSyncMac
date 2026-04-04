@@ -85,6 +85,63 @@ struct StudipSyncTests {
     }
 
     @Test
+    func syncPathPlannerAddsDeterministicSuffixForDuplicateFileNames() {
+        let first = StudIPCourseFileRef(
+            id: "aaaaaaaa11111111",
+            name: "Skript.pdf",
+            description: nil,
+            ownerName: nil,
+            mimeType: nil,
+            downloads: nil,
+            fileSize: nil,
+            createdAt: nil,
+            changedAt: nil,
+            isReadable: true,
+            isDownloadable: true,
+            downloadURL: nil
+        )
+        let second = StudIPCourseFileRef(
+            id: "bbbbbbbb22222222",
+            name: "Skript.pdf",
+            description: nil,
+            ownerName: nil,
+            mimeType: nil,
+            downloads: nil,
+            fileSize: nil,
+            createdAt: nil,
+            changedAt: nil,
+            isReadable: true,
+            isDownloadable: true,
+            downloadURL: nil
+        )
+
+        let names = SyncPathPlanner.fileNameMap(for: [first, second])
+        #expect(names[first.id] == "Skript-aaaaaaaa.pdf")
+        #expect(names[second.id] == "Skript-bbbbbbbb.pdf")
+    }
+
+    @Test
+    func syncPathPlannerFingerprintUsesChangedDateAndFileSize() {
+        let changedAt = Date(timeIntervalSince1970: 1_712_275_200) // 2024-04-06T00:00:00Z
+        let file = StudIPCourseFileRef(
+            id: "abc",
+            name: "Datei.txt",
+            description: nil,
+            ownerName: nil,
+            mimeType: nil,
+            downloads: nil,
+            fileSize: 2048,
+            createdAt: nil,
+            changedAt: changedAt,
+            isReadable: true,
+            isDownloadable: true,
+            downloadURL: nil
+        )
+
+        #expect(SyncPathPlanner.fileFingerprint(for: file) == "1712275200|2048")
+    }
+
+    @Test
     func apiPathResolverBuildsCanonicalCoursesURLFromHostBaseURL() {
         let baseURL = URL(string: "https://studip.uni-goettingen.de")!
         let url = StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: "/v1/courses", queryItems: [])

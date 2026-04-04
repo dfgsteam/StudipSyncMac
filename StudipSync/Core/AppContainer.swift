@@ -16,10 +16,18 @@ final class AppContainer {
     init() {
         let settingsStore = SettingsStore()
         let keychainService = KeychainService()
-        let syncEngine = SyncEngine()
         let statusController = MenuBarStatusController()
         let metadataCache = MetadataCache()
         let apiClient = StudIPAPIClient(settingsStore: settingsStore, keychainService: keychainService)
+        let resourceRepository = StudIPResourceRepository(
+            apiClient: apiClient,
+            settingsStore: settingsStore,
+            metadataCache: metadataCache
+        )
+        let syncEngine = SyncEngine(
+            repository: resourceRepository,
+            settingsStore: settingsStore
+        )
 
         self.settingsStore = settingsStore
         self.keychainService = keychainService
@@ -28,11 +36,7 @@ final class AppContainer {
         self.syncScheduler = SyncScheduler(syncEngine: syncEngine, statusController: statusController)
         self.semesterSelectionStore = SemesterSelectionStore(settingsStore: settingsStore)
         self.apiClient = apiClient
-        self.resourceRepository = StudIPResourceRepository(
-            apiClient: apiClient,
-            settingsStore: settingsStore,
-            metadataCache: metadataCache
-        )
+        self.resourceRepository = resourceRepository
         self.metadataCache = metadataCache
         self.debugWindowState = DebugWindowState()
     }
