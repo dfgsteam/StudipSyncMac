@@ -175,33 +175,27 @@ extension ContentView {
                     fileRefID: fileRef.id,
                     fileName: nonEmpty(fileRef.name)
                 ) {
-                    await MainActor.run {
-                        downloadingFileIDs.remove(fileRef.id)
-                        let didAccessScope = syncedURL.startAccessingSecurityScopedResource()
-                        defer {
-                            if didAccessScope {
-                                syncedURL.stopAccessingSecurityScopedResource()
-                            }
-                        }
-
-                        if isAppSandboxed() && !didAccessScope {
-                            let message = "Kein Zugriff auf lokale Sync-Datei. Bitte Sync-Ordner in den Einstellungen erneut autorisieren."
-                            fileDownloadErrorsByFileID[fileRef.id] = message
-                            fileErrorsByContextKey[contextKey] = message
-                            return
-                        }
-
-                        if !NSWorkspace.shared.open(syncedURL) {
-                            let message = "Datei konnte lokal nicht geoeffnet werden."
-                            fileDownloadErrorsByFileID[fileRef.id] = message
-                            fileErrorsByContextKey[contextKey] = message
-                            return
-                        }
-
-                        fileDownloadErrorsByFileID[fileRef.id] = nil
-                        fileErrorsByContextKey[contextKey] = nil
+                    let opened = await openSyncedURLForDownload(
+                        syncedURL,
+                        fileID: fileRef.id,
+                        contextKey: contextKey
+                    )
+                    if opened {
+                        return
                     }
-                    return
+
+                    if await repository.ensureRootFolderAccessByPromptingUserIfNeeded(),
+                       let refreshedURL = await repository.findSyncedLocalFileURL(
+                           fileRefID: fileRef.id,
+                           fileName: nonEmpty(fileRef.name)
+                       ),
+                       await openSyncedURLForDownload(
+                           refreshedURL,
+                           fileID: fileRef.id,
+                           contextKey: contextKey
+                       ) {
+                        return
+                    }
                 }
 
                 let data = try await repository.fetchFileContent(
@@ -240,31 +234,29 @@ extension ContentView {
                     fileRefID: fileRef.id,
                     fileName: nonEmpty(fileRef.name)
                 ) {
-                    await MainActor.run {
-                        if let previous = quickLookSecurityScopedURL {
-                            previous.stopAccessingSecurityScopedResource()
-                            quickLookSecurityScopedURL = nil
-                        }
-                        let didAccessScope = syncedURL.startAccessingSecurityScopedResource()
-                        if didAccessScope {
-                            quickLookSecurityScopedURL = syncedURL
-                        } else if isAppSandboxed() {
-                            previewingFileIDs.remove(fileRef.id)
-                            let message = "Kein Zugriff auf lokale Sync-Datei. Bitte Sync-Ordner in den Einstellungen erneut autorisieren."
-                            filePreviewErrorsByFileID[fileRef.id] = message
-                            fileErrorsByContextKey[contextKey] = message
-                            return
-                        }
-                        previewingFileIDs.remove(fileRef.id)
-                        selectedQuickLookFile = QuickLookPreviewFile(
-                            id: "\(fileRef.id)-\(syncedURL.path)",
-                            title: nonEmpty(fileRef.name) ?? "Datei \(fileRef.id)",
-                            url: syncedURL
-                        )
-                        filePreviewErrorsByFileID[fileRef.id] = nil
-                        fileErrorsByContextKey[contextKey] = nil
+                    let opened = await openSyncedURLForPreview(
+                        syncedURL,
+                        fileID: fileRef.id,
+                        fileName: nonEmpty(fileRef.name),
+                        contextKey: contextKey
+                    )
+                    if opened {
+                        return
                     }
-                    return
+
+                    if await repository.ensureRootFolderAccessByPromptingUserIfNeeded(),
+                       let refreshedURL = await repository.findSyncedLocalFileURL(
+                           fileRefID: fileRef.id,
+                           fileName: nonEmpty(fileRef.name)
+                       ),
+                       await openSyncedURLForPreview(
+                           refreshedURL,
+                           fileID: fileRef.id,
+                           fileName: nonEmpty(fileRef.name),
+                           contextKey: contextKey
+                       ) {
+                        return
+                    }
                 }
 
                 let data = try await repository.fetchFileContent(
@@ -291,6 +283,67 @@ extension ContentView {
                     fileErrorsByContextKey[contextKey] = "Fehler bei der Vorschau: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    func openSyncedURLForDownload(_ url: URL, fileID: String, contextKey: String) async -> Bool {
+        await MainActor.run {
+            downloadingFileIDs.remove(fileID)
+
+            let didAccessScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccessScope {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            if isAppSandboxed() && !didAccessScope {
+                let message = "Kein Zugriff auf lokale Sync-Datei. Ordnerzugriff wird angefordert ..."
+                fileDownloadErrorsByFileID[fileID] = message
+                fileErrorsByContextKey[contextKey] = message
+                return false
+            }
+
+            guard NSWorkspace.shared.open(url) else {
+                let message = "Datei konnte lokal nicht geoeffnet werden."
+                fileDownloadErrorsByFileID[fileID] = message
+                fileErrorsByContextKey[contextKey] = message
+                return false
+            }
+
+            fileDownloadErrorsByFileID[fileID] = nil
+            fileErrorsByContextKey[contextKey] = nil
+            return true
+        }
+    }
+
+    func openSyncedURLForPreview(_ url: URL, fileID: String, fileName: String?, contextKey: String) async -> Bool {
+        await MainActor.run {
+            if let previous = quickLookSecurityScopedURL {
+                previous.stopAccessingSecurityScopedResource()
+                quickLookSecurityScopedURL = nil
+            }
+
+            let didAccessScope = url.startAccessingSecurityScopedResource()
+            if didAccessScope {
+                quickLookSecurityScopedURL = url
+            } else if isAppSandboxed() {
+                previewingFileIDs.remove(fileID)
+                let message = "Kein Zugriff auf lokale Sync-Datei. Ordnerzugriff wird angefordert ..."
+                filePreviewErrorsByFileID[fileID] = message
+                fileErrorsByContextKey[contextKey] = message
+                return false
+            }
+
+            previewingFileIDs.remove(fileID)
+            selectedQuickLookFile = QuickLookPreviewFile(
+                id: "\(fileID)-\(url.path)",
+                title: fileName ?? "Datei \(fileID)",
+                url: url
+            )
+            filePreviewErrorsByFileID[fileID] = nil
+            fileErrorsByContextKey[contextKey] = nil
+            return true
         }
     }
 

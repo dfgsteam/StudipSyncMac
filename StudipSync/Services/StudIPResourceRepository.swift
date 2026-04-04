@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import Security
 
 actor StudIPResourceRepository {
     typealias CourseRawSection = StudIPCourseRawSection
@@ -84,6 +86,47 @@ actor StudIPResourceRepository {
 
     func currentBaseURL() async -> URL {
         await MainActor.run { settingsStore.configuration.baseURL }
+    }
+
+    func ensureRootFolderAccessByPromptingUserIfNeeded() async -> Bool {
+        if await hasConfiguredRootFolderAccess() {
+            return true
+        }
+
+        let initialURL = await resolveConfiguredRootFolderURL()
+        let granted = await promptForRootFolderAccess(initialURL: initialURL)
+        guard granted else {
+            return false
+        }
+        return await hasConfiguredRootFolderAccess()
+    }
+
+    func hasConfiguredRootFolderAccess() async -> Bool {
+        guard let rootURL = await resolveConfiguredRootFolderURL() else {
+            return false
+        }
+
+        let didAccessScope = rootURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessScope {
+                rootURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        if isAppSandboxed() && !didAccessScope {
+            return false
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+
+        guard FileManager.default.isReadableFile(atPath: rootURL.path) else {
+            return false
+        }
+
+        return FileManager.default.isWritableFile(atPath: rootURL.path)
     }
 
     func findSyncedLocalFileURL(fileRefID: String, fileName: String?) async -> URL? {
@@ -404,6 +447,46 @@ actor StudIPResourceRepository {
             AppLogger.error("Resolving root folder bookmark failed: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    @MainActor
+    private func promptForRootFolderAccess(initialURL: URL?) -> Bool {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Autorisieren"
+        panel.message = "Bitte den Sync-Ordner erneut auswaehlen, damit Dateizugriff erlaubt ist."
+
+        if let initialURL {
+            panel.directoryURL = initialURL
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return false
+        }
+
+        do {
+            let bookmark = try url.bookmarkData(
+                options: [.withSecurityScope],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            settingsStore.updateRootFolderBookmark(bookmark)
+            return true
+        } catch {
+            AppLogger.error("Storing root folder bookmark failed during reauthorization: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func isAppSandboxed() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
+        return (sandboxEntitlement as? Bool) == true
     }
 
     private func sanitizedFileLookupName(_ raw: String) -> String {
