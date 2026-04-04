@@ -306,14 +306,18 @@ extension ContentView {
     func loadCatalogCourses(force: Bool) async {
         guard selectedPage == .veranstaltungen, selectedSemesterID == nil else { return }
         if isLoadingCatalogCourses { return }
-        if !force, !catalogCourses.isEmpty { return }
+
+        let search = normalizedSearchQuery(courseCatalogQuery)
+        let requestKey = catalogCourseRequestKey(semesterID: selectedCatalogSemesterID, query: search)
+        if !force, requestKey == lastCatalogLoadRequestKey {
+            return
+        }
 
         isLoadingCatalogCourses = true
         catalogCoursesError = nil
         defer { isLoadingCatalogCourses = false }
 
         do {
-            let search = normalizedSearchQuery(courseCatalogQuery)
             let fetched = try await repository.fetchCoursesCollection(
                 semesterID: selectedCatalogSemesterID,
                 userID: nil,
@@ -322,13 +326,18 @@ extension ContentView {
                 offset: 0,
                 limit: 1000
             )
-            catalogCourses = sortCoursesForDisplay(fetched)
+            let locallyFiltered = applyCatalogFilters(
+                courses: fetched,
+                semesterID: selectedCatalogSemesterID,
+                query: search
+            )
+            catalogCourses = sortCoursesForDisplay(locallyFiltered)
             selectedCatalogCourseID = catalogCourses.first?.id
             selectedCatalogCourseDetail = nil
             selectedCatalogCourseDetailError = nil
             catalogCoursesLoadedDate = Date()
+            lastCatalogLoadRequestKey = requestKey
         } catch {
-            let search = normalizedSearchQuery(courseCatalogQuery)
             let debugCURL = await repository.debugCoursesSearchCURL(
                 semesterID: selectedCatalogSemesterID,
                 userID: nil,
@@ -346,13 +355,18 @@ extension ContentView {
                 offset: 0,
                 limit: 1000
             ) {
-                let localFiltered = localCourseFilterIfNeeded(courses: fallback, query: search)
+                let localFiltered = applyCatalogFilters(
+                    courses: fallback,
+                    semesterID: selectedCatalogSemesterID,
+                    query: search
+                )
                 catalogCourses = sortCoursesForDisplay(localFiltered)
                 selectedCatalogCourseID = catalogCourses.first?.id
                 selectedCatalogCourseDetail = nil
                 selectedCatalogCourseDetailError = nil
                 catalogCoursesLoadedDate = Date()
                 catalogCoursesError = "Server-Suche nicht verfuegbar (\(error.localizedDescription)). Lokal gefiltert."
+                lastCatalogLoadRequestKey = requestKey
             } else {
                 catalogCourses = []
                 selectedCatalogCourseID = nil
@@ -361,21 +375,33 @@ extension ContentView {
         }
     }
 
-    func localCourseFilterIfNeeded(courses: [CourseDTO], query: String?) -> [CourseDTO] {
-        guard hasSearchQuery(query) else {
-            return courses
-        }
+    func applyCatalogFilters(courses: [CourseDTO], semesterID: String?, query: String?) -> [CourseDTO] {
+        let normalizedSemesterID = semesterID.map(canonicalStudIPID)
 
         return courses.filter { course in
-            fieldMatchesSearchQuery(query, fields: [
-                course.id,
-                course.title,
-                course.subtitle,
-                course.courseNumber,
-                course.description,
-                course.location
-            ])
+            if let normalizedSemesterID, !course.matches(semesterID: normalizedSemesterID) {
+                return false
+            }
+
+            if hasSearchQuery(query) {
+                return fieldMatchesSearchQuery(query, fields: [
+                    course.id,
+                    course.title,
+                    course.subtitle,
+                    course.courseNumber,
+                    course.description,
+                    course.location
+                ])
+            }
+
+            return true
         }
+    }
+
+    func catalogCourseRequestKey(semesterID: String?, query: String?) -> String {
+        let semesterPart = semesterID.map(canonicalStudIPID) ?? "all"
+        let queryPart = normalizedSearchQuery(query)?.lowercased() ?? ""
+        return "\(semesterPart)|\(queryPart)"
     }
 
     func loadSelectedCatalogCourseDetailIfNeeded() async {

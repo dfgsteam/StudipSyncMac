@@ -1,4 +1,5 @@
 import AppKit
+import Security
 import SwiftUI
 
 struct SettingsView: View {
@@ -10,6 +11,8 @@ struct SettingsView: View {
     @State private var usernameText: String = ""
     @State private var passwordText: String = ""
     @State private var message: String = ""
+    @State private var rootFolderAccessMessage: String = ""
+    @State private var rootFolderAccessHasError = false
     @State private var semesterMinFilterDate: Date = Calendar.current.date(from: DateComponents(year: 2022, month: 4, day: 1)) ?? Date()
     @State private var semesterMaxFilterDate: Date = Date()
 
@@ -59,6 +62,16 @@ struct SettingsView: View {
 
                 Button("Sync-Ordner auswaehlen") {
                     chooseRootFolder()
+                }
+
+                Button("Ordnerzugriff pruefen") {
+                    refreshRootFolderAccessStatus()
+                }
+
+                if !rootFolderAccessMessage.isEmpty {
+                    Text(rootFolderAccessMessage)
+                        .font(.footnote)
+                        .foregroundStyle(rootFolderAccessHasError ? .red : .secondary)
                 }
             }
 
@@ -144,6 +157,7 @@ struct SettingsView: View {
                 semesterMaxFilterDate = configuredDate
             }
             loadCredentials()
+            refreshRootFolderAccessStatus()
         }
     }
 
@@ -236,6 +250,7 @@ struct SettingsView: View {
                 )
                 settingsStore.updateRootFolderBookmark(bookmark)
                 message = "Sync-Ordner gespeichert."
+                refreshRootFolderAccessStatus()
             } catch {
                 message = "Sync-Ordner konnte nicht gespeichert werden."
                 AppLogger.error("Storing root folder bookmark failed: \(error.localizedDescription)")
@@ -260,5 +275,73 @@ struct SettingsView: View {
         } catch {
             return "Sync-Ordner konnte nicht gelesen werden"
         }
+    }
+
+    private func refreshRootFolderAccessStatus() {
+        let result = evaluateRootFolderAccess()
+        rootFolderAccessMessage = result.message
+        rootFolderAccessHasError = !result.ok
+    }
+
+    private func evaluateRootFolderAccess() -> (ok: Bool, message: String) {
+        guard let bookmark = settingsStore.configuration.rootFolderBookmark else {
+            return (false, "Kein Sync-Ordner ausgewaehlt.")
+        }
+
+        do {
+            var isStale = false
+            let url = try URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+
+            if isStale {
+                let refreshedBookmark = try url.bookmarkData(
+                    options: [.withSecurityScope],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                settingsStore.updateRootFolderBookmark(refreshedBookmark)
+            }
+
+            let didAccessScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccessScope {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            if isAppSandboxed() && !didAccessScope {
+                return (false, "Kein Ordnerzugriff. Bitte Sync-Ordner erneut auswaehlen.")
+            }
+
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                return (false, "Sync-Ordner existiert nicht mehr.")
+            }
+
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                return (false, "Sync-Ordner ist nicht lesbar.")
+            }
+
+            guard FileManager.default.isWritableFile(atPath: url.path) else {
+                return (false, "Sync-Ordner ist nicht beschreibbar.")
+            }
+
+            return (true, "Ordnerzugriff aktiv.")
+        } catch {
+            return (false, "Sync-Ordner konnte nicht gelesen werden: \(error.localizedDescription)")
+        }
+    }
+
+    private func isAppSandboxed() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
+        return (sandboxEntitlement as? Bool) == true
     }
 }

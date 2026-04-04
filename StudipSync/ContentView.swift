@@ -179,6 +179,7 @@ struct ContentView: View {
     @State var isLoadingCatalogCourses = false
     @State var catalogCoursesLoadedDate: Date?
     @State var catalogCoursesError: String?
+    @State var lastCatalogLoadRequestKey: String?
     @State var selectedCatalogCourseID: String?
     @State var selectedCatalogCourseDetail: CourseDTO?
     @State var selectedCatalogCourseDetailError: String?

@@ -527,35 +527,24 @@ extension ContentView {
 
             GroupBox {
                 let events = userUpcomingEventsByID[normalizedUserID] ?? []
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(events.count) naechste Termine")
-                        .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(events.count) naechste Termine")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        if !events.isEmpty {
+                            Label("Kalender", systemImage: "calendar.badge.clock")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     if events.isEmpty {
                         Text("Keine anstehenden Termine gefunden.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(events.prefix(20)) { event in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(nonEmpty(event.title) ?? "Termin \(event.id)")
-                                    .font(.callout.weight(.medium))
-                                    .lineLimit(2)
-                                Text(eventTimeLine(for: event))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                if let details = nonEmpty(event.details) {
-                                    Text(details)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(Color.secondary.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
+                        userEventCalendarTemplate(events: events)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -942,6 +931,125 @@ extension ContentView {
         }
     }
 
+    func userEventCalendarTemplate(events: [EventDTO]) -> some View {
+        let groupedEvents = groupedUserEventsByDay(events)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(groupedEvents.indices, id: \.self) { index in
+                let section = groupedEvents[index]
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(userEventDayHeader(for: section.day))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text("\(section.events.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.secondary.opacity(0.14))
+                            .clipShape(Capsule())
+                    }
+
+                    ForEach(section.events) { event in
+                        userEventCalendarRow(event)
+                    }
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    func groupedUserEventsByDay(_ events: [EventDTO]) -> [(day: Date?, events: [EventDTO])] {
+        let sortedEvents = sortUserEventsForDisplay(events)
+        let calendar = Calendar.current
+        let grouped: [Date?: [EventDTO]] = Dictionary(grouping: sortedEvents) { event in
+            guard let start = parseAPIDate(event.start) else { return nil }
+            return calendar.startOfDay(for: start)
+        }
+
+        var datedSections: [(day: Date?, events: [EventDTO])] = []
+        datedSections.reserveCapacity(grouped.count)
+
+        for (key, value) in grouped {
+            if let key {
+                datedSections.append((day: key, events: value))
+            }
+        }
+
+        datedSections.sort { lhs, rhs in
+            guard let lhsDay = lhs.day, let rhsDay = rhs.day else { return false }
+            return lhsDay < rhsDay
+        }
+
+        if let undatedEvents = grouped[nil], !undatedEvents.isEmpty {
+            datedSections.append((day: nil, events: undatedEvents))
+        }
+
+        return datedSections
+    }
+
+    func userEventCalendarRow(_ event: EventDTO) -> some View {
+        let startDate = parseAPIDate(event.start)
+        let endDate = parseAPIDate(event.end)
+
+        return HStack(alignment: .top, spacing: 10) {
+            Text(userEventTimeRange(startDate: startDate, endDate: endDate))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(nonEmpty(event.title) ?? "Termin \(event.id)")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+
+                if let details = nonEmpty(event.details) {
+                    Text(details)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    func userEventDayHeader(for day: Date?) -> String {
+        guard let day else { return "Ohne Datum" }
+        return Self.userEventDayFormatter.string(from: day)
+    }
+
+    func userEventTimeRange(startDate: Date?, endDate: Date?) -> String {
+        if let startDate, let endDate {
+            let calendar = Calendar.current
+            if calendar.isDate(startDate, inSameDayAs: endDate) {
+                return "\(Self.userEventTimeFormatter.string(from: startDate)) - \(Self.userEventTimeFormatter.string(from: endDate))"
+            }
+            return "\(Self.fileDateFormatter.string(from: startDate)) - \(Self.fileDateFormatter.string(from: endDate))"
+        }
+
+        if let startDate {
+            return "Ab \(Self.userEventTimeFormatter.string(from: startDate))"
+        }
+
+        if let endDate {
+            return "Bis \(Self.userEventTimeFormatter.string(from: endDate))"
+        }
+
+        return "Keine Zeitangabe"
+    }
+
     func sortUserScheduleForDisplay(_ scheduleEntries: [ScheduleEntryDTO]) -> [ScheduleEntryDTO] {
         scheduleEntries.sorted { lhs, rhs in
             let lhsStart = parseAPIDate(lhs.start) ?? .distantFuture
@@ -1070,6 +1178,20 @@ extension ContentView {
         }
         return content
     }
+
+    static let userEventDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.dateFormat = "EEEE, d. MMMM"
+        return formatter
+    }()
+
+    static let userEventTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     func openMailAddress(_ address: String?) {
         guard let email = nonEmpty(address) else { return }

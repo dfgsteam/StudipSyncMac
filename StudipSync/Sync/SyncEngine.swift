@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Security
 
 enum SyncPathPlanner {
     static func sanitizedPathComponent(_ raw: String) -> String {
@@ -86,9 +87,9 @@ actor SyncEngine {
             case .rootFolderNotConfigured:
                 return "Kein Sync-Ordner konfiguriert."
             case .couldNotResolveRootFolder:
-                return "Sync-Ordner konnte nicht aus dem Bookmark gelesen werden."
+                return "Sync-Ordner konnte nicht aus dem Bookmark gelesen werden. Bitte in den Einstellungen neu auswaehlen."
             case .rootFolderNotAccessible:
-                return "Sync-Ordner ist aktuell nicht zugreifbar."
+                return "Sync-Ordner ist aktuell nicht zugreifbar. Bitte in den Einstellungen erneut autorisieren."
             case .activeSemesterSyncFailed(let errors):
                 let message = errors.prefix(3).joined(separator: " | ")
                 return "Sync teilweise fehlgeschlagen: \(message)"
@@ -172,6 +173,9 @@ actor SyncEngine {
             if didAccessScope {
                 rootURL.stopAccessingSecurityScopedResource()
             }
+        }
+        if isAppSandboxed() && !didAccessScope {
+            throw SyncEngineError.rootFolderNotAccessible
         }
 
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -436,5 +440,14 @@ actor SyncEngine {
             return String(filePath.dropFirst(rootPath.count + 1))
         }
         return fileURL.lastPathComponent
+    }
+
+    private func isAppSandboxed() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let sandboxEntitlement = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
+        return (sandboxEntitlement as? Bool) == true
     }
 }

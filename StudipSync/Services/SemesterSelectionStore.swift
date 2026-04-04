@@ -15,6 +15,7 @@ final class SemesterSelectionStore {
         self.settingsStore = settingsStore
         self.defaults = defaults
         self.currentBaseURLKey = Self.baseURLKey(for: settingsStore.configuration.baseURL)
+        self.activeSemesterIDs = []
 
         let selectionsByBaseURL = loadSelectionsByBaseURL()
         if let persistedSelection = selectionsByBaseURL[currentBaseURLKey] {
