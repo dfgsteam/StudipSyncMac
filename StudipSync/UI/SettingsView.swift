@@ -84,6 +84,31 @@ struct SettingsView: View {
                     ),
                     in: 5...60
                 )
+
+                Stepper(
+                    "Parallele Downloads: \(settingsStore.configuration.maxConcurrentFileDownloads)",
+                    value: Binding(
+                        get: { settingsStore.configuration.maxConcurrentFileDownloads },
+                        set: { settingsStore.updateMaxConcurrentFileDownloads($0) }
+                    ),
+                    in: 2...4
+                )
+
+                Toggle(
+                    "Sync bei Low Power pausieren",
+                    isOn: Binding(
+                        get: { settingsStore.configuration.pauseSyncOnLowPowerMode },
+                        set: { settingsStore.updatePauseSyncOnLowPowerMode($0) }
+                    )
+                )
+
+                Toggle(
+                    "Nur bei WLAN synchronisieren",
+                    isOn: Binding(
+                        get: { settingsStore.configuration.syncOnlyOnWiFi },
+                        set: { settingsStore.updateSyncOnlyOnWiFi($0) }
+                    )
+                )
             }
 
             Section("Semester") {

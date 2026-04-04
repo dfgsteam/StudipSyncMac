@@ -97,6 +97,20 @@ extension StudIPResourceRepository {
         try await files().headFileContent(fileRefID: fileRefID)
     }
 
+    func downloadFileContent(
+        fileRefID: String,
+        fallbackDownloadPath: String? = nil,
+        ifNoneMatch: String? = nil,
+        ifModifiedSince: String? = nil
+    ) async throws -> StudIPFileRepository.FileContentDownloadResult {
+        try await files().downloadFileContent(
+            fileRefID: fileRefID,
+            fallbackDownloadPath: fallbackDownloadPath,
+            ifNoneMatch: ifNoneMatch,
+            ifModifiedSince: ifModifiedSince
+        )
+    }
+
     // MARK: - Planner
 
     func fetchUserEvents(userID: String, timestamp: Int? = nil) async throws -> [EventDTO] {

@@ -171,18 +171,21 @@ struct StudipSyncTests {
             intervalMinutes: 10,
             toleranceSeconds: 30,
             minimumDelaySeconds: 5,
+            backoffMultiplier: 1,
             randomUnit: { 0 }
         )
         let center = SyncSchedulePlanner.nextDelaySeconds(
             intervalMinutes: 10,
             toleranceSeconds: 30,
             minimumDelaySeconds: 5,
+            backoffMultiplier: 1,
             randomUnit: { 0.5 }
         )
         let upper = SyncSchedulePlanner.nextDelaySeconds(
             intervalMinutes: 10,
             toleranceSeconds: 30,
             minimumDelaySeconds: 5,
+            backoffMultiplier: 1,
             randomUnit: { 1 }
         )
 
@@ -197,10 +200,39 @@ struct StudipSyncTests {
             intervalMinutes: 0,
             toleranceSeconds: 100,
             minimumDelaySeconds: 5,
+            backoffMultiplier: 1,
             randomUnit: { 0 }
         )
 
         #expect(delay == 5)
+    }
+
+    @Test
+    func syncSchedulePlannerScalesDelayWithBackoffMultiplier() {
+        let delay = SyncSchedulePlanner.nextDelaySeconds(
+            intervalMinutes: 10,
+            toleranceSeconds: 30,
+            minimumDelaySeconds: 5,
+            backoffMultiplier: 2,
+            randomUnit: { 0.5 }
+        )
+
+        #expect(delay == 1200)
+    }
+
+    @Test
+    func syncAdaptiveBackoffPlannerUsesFailureBackoffAndIdleBackoff() {
+        let idleMultiplier = SyncAdaptiveBackoffPlanner.multiplier(
+            consecutiveIdleRuns: 3,
+            consecutiveFailures: 0
+        )
+        let failureMultiplier = SyncAdaptiveBackoffPlanner.multiplier(
+            consecutiveIdleRuns: 0,
+            consecutiveFailures: 3
+        )
+
+        #expect(idleMultiplier == 2.5)
+        #expect(failureMultiplier == 8)
     }
 
     @Test

@@ -84,6 +84,12 @@ struct StudIPHTTPResponse {
     let headers: [AnyHashable: Any]
 }
 
+struct StudIPHTTPDownloadResponse {
+    let temporaryFileURL: URL?
+    let statusCode: Int
+    let headers: [AnyHashable: Any]
+}
+
 final class StudIPAPIClient {
     private enum AuthorizationHeader {
         case apiKey(String)
@@ -268,6 +274,71 @@ final class StudIPAPIClient {
         )
     }
 
+    func performRequestDownload(
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        method: StudIPHTTPMethod = .get,
+        acceptHeader: String? = "*/*",
+        contentTypeHeader: String? = nil,
+        additionalHeaders: [String: String] = [:],
+        acceptableStatusCodes: Set<Int> = Set(200..<300)
+    ) async throws -> StudIPHTTPDownloadResponse {
+        guard hasOutgoingNetworkPermission() else {
+            throw APIClientError.sandboxNetworkPermissionMissing
+        }
+
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        guard let url = buildURL(baseURL: baseURL, path: path, queryItems: queryItems) else {
+            throw APIClientError.invalidPath(requestReference(baseURL: baseURL, path: path, queryItems: queryItems))
+        }
+
+        guard let authorizationHeader = try await resolveAuthorizationHeader(for: baseURL) else {
+            throw APIClientError.missingCredentials
+        }
+
+        return try await sendDownload(
+            url: url,
+            authorizationHeader: authorizationHeader,
+            method: method,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader,
+            additionalHeaders: additionalHeaders,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func performRawPathDownload(
+        path: String,
+        method: StudIPHTTPMethod = .get,
+        acceptHeader: String? = "*/*",
+        contentTypeHeader: String? = nil,
+        additionalHeaders: [String: String] = [:],
+        acceptableStatusCodes: Set<Int> = Set(200..<300)
+    ) async throws -> StudIPHTTPDownloadResponse {
+        guard hasOutgoingNetworkPermission() else {
+            throw APIClientError.sandboxNetworkPermissionMissing
+        }
+
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        guard let url = buildRawURL(baseURL: baseURL, path: path) else {
+            throw APIClientError.invalidPath("\(baseURL.absoluteString) | \(path)")
+        }
+
+        guard let authorizationHeader = try await resolveAuthorizationHeader(for: baseURL) else {
+            throw APIClientError.missingCredentials
+        }
+
+        return try await sendDownload(
+            url: url,
+            authorizationHeader: authorizationHeader,
+            method: method,
+            acceptHeader: acceptHeader,
+            contentTypeHeader: contentTypeHeader,
+            additionalHeaders: additionalHeaders,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
     func makeCURL(path: String, queryItems: [URLQueryItem] = []) async throws -> String {
         try await makeCURL(path: path, queryItems: queryItems, method: .get)
     }
@@ -402,6 +473,71 @@ final class StudIPAPIClient {
         }
 
         return StudIPHTTPResponse(data: data, statusCode: http.statusCode, headers: http.allHeaderFields)
+    }
+
+    private func sendDownload(
+        url: URL,
+        authorizationHeader: AuthorizationHeader,
+        method: StudIPHTTPMethod,
+        acceptHeader: String?,
+        contentTypeHeader: String?,
+        additionalHeaders: [String: String],
+        acceptableStatusCodes: Set<Int>
+    ) async throws -> StudIPHTTPDownloadResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = method.rawValue
+        request.timeoutInterval = 60
+
+        if let acceptHeader {
+            request.setValue(acceptHeader, forHTTPHeaderField: "Accept")
+        }
+        if let contentTypeHeader {
+            request.setValue(contentTypeHeader, forHTTPHeaderField: "Content-Type")
+        }
+        for (header, value) in additionalHeaders {
+            request.setValue(value, forHTTPHeaderField: header)
+        }
+
+        switch authorizationHeader {
+        case .apiKey(let apiKey):
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .basic(let credentials):
+            let raw = "\(credentials.username):\(credentials.password)"
+            let token = Data(raw.utf8).base64EncodedString()
+            request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (temporaryFileURL, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse(url.absoluteString)
+        }
+
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw APIClientError.unauthorized(url.absoluteString)
+        }
+
+        guard acceptableStatusCodes.contains(http.statusCode) else {
+            var bodyText: String?
+            if let data = try? Data(contentsOf: temporaryFileURL), !data.isEmpty {
+                bodyText = String(data: data, encoding: .utf8)
+            }
+            throw APIClientError.httpStatus(http.statusCode, bodyText, url.absoluteString)
+        }
+
+        if http.statusCode == 304 {
+            try? FileManager.default.removeItem(at: temporaryFileURL)
+            return StudIPHTTPDownloadResponse(
+                temporaryFileURL: nil,
+                statusCode: http.statusCode,
+                headers: http.allHeaderFields
+            )
+        }
+
+        return StudIPHTTPDownloadResponse(
+            temporaryFileURL: temporaryFileURL,
+            statusCode: http.statusCode,
+            headers: http.allHeaderFields
+        )
     }
 
     private func normalizedResponseData(_ data: Data) -> Data {

@@ -1,6 +1,16 @@
 import Foundation
 
 actor StudIPFileRepository {
+    struct FileContentDownloadResult {
+        let temporaryFileURL: URL?
+        let statusCode: Int
+        let headers: [AnyHashable: Any]
+
+        var wasNotModified: Bool {
+            statusCode == 304
+        }
+    }
+
     private let apiClient: StudIPAPIClient
     private let responseDecoder: StudIPResponseDecoder
 
@@ -164,5 +174,67 @@ actor StudIPFileRepository {
             method: .head,
             acceptHeader: nil
         )
+    }
+
+    func downloadFileContent(
+        fileRefID: String,
+        fallbackDownloadPath: String? = nil,
+        ifNoneMatch: String? = nil,
+        ifModifiedSince: String? = nil
+    ) async throws -> FileContentDownloadResult {
+        let escapedID = StudIPRepositoryUtilities.escapedPathID(fileRefID)
+        var conditionalHeaders: [String: String] = [:]
+        if let ifNoneMatch = ifNoneMatch?.trimmingCharacters(in: .whitespacesAndNewlines), !ifNoneMatch.isEmpty {
+            conditionalHeaders["If-None-Match"] = ifNoneMatch
+        }
+        if let ifModifiedSince = ifModifiedSince?.trimmingCharacters(in: .whitespacesAndNewlines), !ifModifiedSince.isEmpty {
+            conditionalHeaders["If-Modified-Since"] = ifModifiedSince
+        }
+
+        do {
+            let response = try await apiClient.performRequestDownload(
+                path: "/v1/file-refs/\(escapedID)/content",
+                method: .get,
+                acceptHeader: "*/*",
+                additionalHeaders: conditionalHeaders,
+                acceptableStatusCodes: [200, 304]
+            )
+            return FileContentDownloadResult(
+                temporaryFileURL: response.temporaryFileURL,
+                statusCode: response.statusCode,
+                headers: response.headers
+            )
+        } catch let contentError {
+            guard let fallbackDownloadPath = fallbackDownloadPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !fallbackDownloadPath.isEmpty else {
+                throw contentError
+            }
+
+            AppLogger.info("File content endpoint failed for \(escapedID), trying fallback download path.")
+
+            do {
+                let response = try await apiClient.performRawPathDownload(
+                    path: fallbackDownloadPath,
+                    method: .get,
+                    acceptHeader: "*/*",
+                    additionalHeaders: conditionalHeaders,
+                    acceptableStatusCodes: [200, 304]
+                )
+                return FileContentDownloadResult(
+                    temporaryFileURL: response.temporaryFileURL,
+                    statusCode: response.statusCode,
+                    headers: response.headers
+                )
+            } catch let fallbackError {
+                throw NSError(
+                    domain: "StudIPFileRepository",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Dateidownload fehlgeschlagen. content: \(contentError.localizedDescription) | fallback: \(fallbackError.localizedDescription)"
+                    ]
+                )
+            }
+        }
     }
 }

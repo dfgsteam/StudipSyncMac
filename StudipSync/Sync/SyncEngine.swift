@@ -102,12 +102,24 @@ enum SyncPathPlanner {
     }
 }
 
+struct SyncRunReport: Sendable {
+    let didRun: Bool
+    let downloadedFiles: Int
+    let skippedFiles: Int
+    let removedFiles: Int
+
+    var hasChanges: Bool {
+        downloadedFiles > 0 || removedFiles > 0
+    }
+}
+
 actor SyncEngine {
     enum SyncEngineError: LocalizedError {
         case rootFolderNotConfigured
         case couldNotResolveRootFolder
         case rootFolderNotAccessible
         case activeSemesterSyncFailed([String])
+        case missingDownloadedFilePayload(fileID: String)
 
         var errorDescription: String? {
             switch self {
@@ -120,19 +132,23 @@ actor SyncEngine {
             case .activeSemesterSyncFailed(let errors):
                 let message = errors.prefix(3).joined(separator: " | ")
                 return "Sync teilweise fehlgeschlagen: \(message)"
+            case .missingDownloadedFilePayload(let fileID):
+                return "Download lieferte keinen Dateistrom fuer Datei \(fileID)."
             }
         }
     }
 
     private struct SyncManifest: Codable {
-        struct Entry: Codable {
+        struct Entry: Codable, Sendable {
             let fingerprint: String
             let relativePath: String
             let semesterID: String
             let updatedAt: Date
+            let eTag: String?
+            let lastModified: String?
         }
 
-        let version: Int
+        var version: Int
         var entries: [String: Entry]
     }
 
@@ -141,7 +157,35 @@ actor SyncEngine {
         var coursesSynced: Int = 0
         var downloadedFiles: Int = 0
         var skippedFiles: Int = 0
+        var removedFiles: Int = 0
+
+        var runReport: SyncRunReport {
+            SyncRunReport(
+                didRun: true,
+                downloadedFiles: downloadedFiles,
+                skippedFiles: skippedFiles,
+                removedFiles: removedFiles
+            )
+        }
     }
+
+    private struct FileSyncPlan: Sendable {
+        let fileID: String
+        let fingerprint: String
+        let canonicalSemesterID: String
+        let targetURL: URL
+        let relativePath: String
+        let fallbackDownloadPath: String?
+        let existingEntry: SyncManifest.Entry?
+    }
+
+    private struct FileSyncResult: Sendable {
+        let fileID: String
+        let didSkip: Bool
+        let entry: SyncManifest.Entry
+    }
+
+    private let currentManifestVersion = 2
 
     private let repository: StudIPResourceRepository
     private let settingsStore: SettingsStore
@@ -171,10 +215,10 @@ actor SyncEngine {
     }
 
     @discardableResult
-    func runSync() async throws -> Bool {
+    func runSync() async throws -> SyncRunReport {
         guard !isRunning else {
             AppLogger.info("Sync skipped because another run is in progress")
-            return false
+            return SyncRunReport(didRun: false, downloadedFiles: 0, skippedFiles: 0, removedFiles: 0)
         }
 
         isRunning = true
@@ -182,10 +226,11 @@ actor SyncEngine {
 
         AppLogger.info("Sync run started")
         let summary = try await performSync()
+        let report = summary.runReport
         AppLogger.info(
-            "Sync run completed | semesters=\(summary.semestersSynced) courses=\(summary.coursesSynced) downloaded=\(summary.downloadedFiles) skipped=\(summary.skippedFiles)"
+            "Sync run completed | semesters=\(summary.semestersSynced) courses=\(summary.coursesSynced) downloaded=\(summary.downloadedFiles) skipped=\(summary.skippedFiles) removed=\(summary.removedFiles)"
         )
-        return true
+        return report
     }
 
     private func performSync() async throws -> SyncSummary {
@@ -217,6 +262,8 @@ actor SyncEngine {
             return SyncSummary()
         }
 
+        let maxConcurrentDownloads = min(4, max(2, configuration.maxConcurrentFileDownloads))
+
         var manifest = try loadManifest(baseURL: configuration.baseURL, rootURL: rootURL)
         var seenFileIDs: Set<String> = []
         var summary = SyncSummary()
@@ -242,7 +289,8 @@ actor SyncEngine {
                     semester,
                     rootURL: rootURL,
                     manifest: &manifest,
-                    seenFileIDs: &seenFileIDs
+                    seenFileIDs: &seenFileIDs,
+                    maxConcurrentDownloads: maxConcurrentDownloads
                 )
 
                 summary.semestersSynced += 1
@@ -260,6 +308,8 @@ actor SyncEngine {
             activeSemesterIDs: activeSemesterIDsCanonical,
             rootURL: rootURL
         )
+        summary.removedFiles = removedFileCount
+
         if removedFileCount > 0 {
             AppLogger.info("Sync cleanup removed \(removedFileCount) local files that no longer exist remotely")
         }
@@ -277,7 +327,8 @@ actor SyncEngine {
         _ semester: SemesterDTO,
         rootURL: URL,
         manifest: inout SyncManifest,
-        seenFileIDs: inout Set<String>
+        seenFileIDs: inout Set<String>,
+        maxConcurrentDownloads: Int
     ) async throws -> SyncSummary {
         let semesterFolder = SyncPathPlanner.semesterDirectoryName(for: semester)
         let semesterURL = rootURL.appendingPathComponent(semesterFolder, isDirectory: true)
@@ -299,6 +350,9 @@ actor SyncEngine {
             let files = try await repository.fetchCourseFiles(courseID: course.id, offset: 0, limit: 1000)
             let fileNamesByID = SyncPathPlanner.fileNameMap(for: files)
 
+            var plans: [FileSyncPlan] = []
+            plans.reserveCapacity(files.count)
+
             for file in files {
                 if Task.isCancelled {
                     break
@@ -310,20 +364,57 @@ actor SyncEngine {
 
                 let targetFileName = fileNamesByID[file.id] ?? "datei-\(SyncPathPlanner.shortID(file.id))"
                 let targetURL = courseURL.appendingPathComponent(targetFileName, isDirectory: false)
-
-                let didSkip = try await syncFile(
-                    file,
+                let plan = FileSyncPlan(
+                    fileID: file.id,
+                    fingerprint: SyncPathPlanner.fileFingerprint(for: file),
+                    canonicalSemesterID: canonicalStudIPID(semester.id),
                     targetURL: targetURL,
-                    semesterID: semester.id,
-                    rootURL: rootURL,
-                    manifest: &manifest
+                    relativePath: relativePath(from: rootURL, to: targetURL),
+                    fallbackDownloadPath: fallbackDownloadPath(from: file.downloadURL),
+                    existingEntry: manifest.entries[file.id]
                 )
+                plans.append(plan)
+            }
 
-                seenFileIDs.insert(file.id)
-                if didSkip {
-                    summary.skippedFiles += 1
-                } else {
-                    summary.downloadedFiles += 1
+            if plans.isEmpty {
+                continue
+            }
+
+            var iterator = plans.makeIterator()
+            try await withThrowingTaskGroup(of: FileSyncResult.self) { group in
+                var inFlight = 0
+
+                func scheduleNext(_ group: inout ThrowingTaskGroup<FileSyncResult, Error>) {
+                    guard let nextPlan = iterator.next() else {
+                        return
+                    }
+
+                    inFlight += 1
+                    group.addTask {
+                        try await self.syncFile(nextPlan, rootURL: rootURL)
+                    }
+                }
+
+                let initialTasks = min(maxConcurrentDownloads, plans.count)
+                for _ in 0..<initialTasks {
+                    scheduleNext(&group)
+                }
+
+                while inFlight > 0 {
+                    guard let result = try await group.next() else {
+                        break
+                    }
+                    inFlight -= 1
+
+                    seenFileIDs.insert(result.fileID)
+                    manifest.entries[result.fileID] = result.entry
+                    if result.didSkip {
+                        summary.skippedFiles += 1
+                    } else {
+                        summary.downloadedFiles += 1
+                    }
+
+                    scheduleNext(&group)
                 }
             }
         }
@@ -331,61 +422,204 @@ actor SyncEngine {
         return summary
     }
 
-    private func syncFile(
-        _ file: StudIPCourseFileRef,
-        targetURL: URL,
-        semesterID: String,
-        rootURL: URL,
-        manifest: inout SyncManifest
-    ) async throws -> Bool {
-        let fingerprint = SyncPathPlanner.fileFingerprint(for: file)
-        let relativePath = relativePath(from: rootURL, to: targetURL)
-        let canonicalSemesterID = canonicalStudIPID(semesterID)
-
-        if let entry = manifest.entries[file.id],
-           entry.fingerprint == fingerprint,
-           fileManager.fileExists(atPath: targetURL.path) {
-            manifest.entries[file.id] = .init(
-                fingerprint: fingerprint,
-                relativePath: relativePath,
-                semesterID: canonicalSemesterID,
-                updatedAt: Date()
+    private func syncFile(_ plan: FileSyncPlan, rootURL: URL) async throws -> FileSyncResult {
+        if let entry = plan.existingEntry,
+           entry.fingerprint == plan.fingerprint,
+           fileManager.fileExists(atPath: plan.targetURL.path) {
+            return FileSyncResult(
+                fileID: plan.fileID,
+                didSkip: true,
+                entry: SyncManifest.Entry(
+                    fingerprint: plan.fingerprint,
+                    relativePath: plan.relativePath,
+                    semesterID: plan.canonicalSemesterID,
+                    updatedAt: Date(),
+                    eTag: entry.eTag,
+                    lastModified: entry.lastModified
+                )
             )
-            return true
         }
 
-        if let entry = manifest.entries[file.id],
-           entry.fingerprint == fingerprint {
+        if let entry = plan.existingEntry,
+           entry.fingerprint == plan.fingerprint {
             let previousURL = rootURL.appendingPathComponent(entry.relativePath, isDirectory: false)
             if fileManager.fileExists(atPath: previousURL.path) {
-                try fileManager.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if fileManager.fileExists(atPath: targetURL.path) {
-                    try fileManager.removeItem(at: targetURL)
-                }
-                try fileManager.moveItem(at: previousURL, to: targetURL)
-                manifest.entries[file.id] = .init(
-                    fingerprint: fingerprint,
-                    relativePath: relativePath,
-                    semesterID: canonicalSemesterID,
-                    updatedAt: Date()
+                try moveKnownLocalFile(from: previousURL, to: plan.targetURL)
+                return FileSyncResult(
+                    fileID: plan.fileID,
+                    didSkip: true,
+                    entry: SyncManifest.Entry(
+                        fingerprint: plan.fingerprint,
+                        relativePath: plan.relativePath,
+                        semesterID: plan.canonicalSemesterID,
+                        updatedAt: Date(),
+                        eTag: entry.eTag,
+                        lastModified: entry.lastModified
+                    )
                 )
-                return true
             }
         }
 
-        let fallbackDownloadPath = fallbackDownloadPath(from: file.downloadURL)
-        let data = try await repository.fetchFileContent(fileRefID: file.id, fallbackDownloadPath: fallbackDownloadPath)
-        try fileManager.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: targetURL, options: .atomic)
-
-        manifest.entries[file.id] = .init(
-            fingerprint: fingerprint,
-            relativePath: relativePath,
-            semesterID: canonicalSemesterID,
-            updatedAt: Date()
+        var deltaResult = try await repository.downloadFileContent(
+            fileRefID: plan.fileID,
+            fallbackDownloadPath: plan.fallbackDownloadPath,
+            ifNoneMatch: plan.existingEntry?.eTag,
+            ifModifiedSince: plan.existingEntry?.lastModified
         )
 
+        if deltaResult.wasNotModified {
+            let recoveredLocalFile = try recoverLocalFileIfNeeded(rootURL: rootURL, plan: plan)
+            if recoveredLocalFile {
+                return FileSyncResult(
+                    fileID: plan.fileID,
+                    didSkip: true,
+                    entry: SyncManifest.Entry(
+                        fingerprint: plan.fingerprint,
+                        relativePath: plan.relativePath,
+                        semesterID: plan.canonicalSemesterID,
+                        updatedAt: Date(),
+                        eTag: normalizedHeaderValue(deltaResult.headers, key: "etag") ?? plan.existingEntry?.eTag,
+                        lastModified: normalizedHeaderValue(deltaResult.headers, key: "last-modified") ?? plan.existingEntry?.lastModified
+                    )
+                )
+            }
+
+            // Lokale Datei fehlt trotz 304 -> einmal ohne Bedingungen nachladen.
+            deltaResult = try await repository.downloadFileContent(
+                fileRefID: plan.fileID,
+                fallbackDownloadPath: plan.fallbackDownloadPath,
+                ifNoneMatch: nil,
+                ifModifiedSince: nil
+            )
+        }
+
+        guard deltaResult.statusCode == 200,
+              let downloadedURL = deltaResult.temporaryFileURL else {
+            throw SyncEngineError.missingDownloadedFilePayload(fileID: plan.fileID)
+        }
+
+        let didSkip = try applyDownloadedFileAtomically(downloadedFileURL: downloadedURL, targetURL: plan.targetURL)
+
+        let entry = SyncManifest.Entry(
+            fingerprint: plan.fingerprint,
+            relativePath: plan.relativePath,
+            semesterID: plan.canonicalSemesterID,
+            updatedAt: Date(),
+            eTag: normalizedHeaderValue(deltaResult.headers, key: "etag") ?? plan.existingEntry?.eTag,
+            lastModified: normalizedHeaderValue(deltaResult.headers, key: "last-modified") ?? plan.existingEntry?.lastModified
+        )
+
+        return FileSyncResult(fileID: plan.fileID, didSkip: didSkip, entry: entry)
+    }
+
+    private func recoverLocalFileIfNeeded(rootURL: URL, plan: FileSyncPlan) throws -> Bool {
+        if fileManager.fileExists(atPath: plan.targetURL.path) {
+            return true
+        }
+
+        guard let existingEntry = plan.existingEntry else {
+            return false
+        }
+
+        let previousURL = rootURL
+            .appendingPathComponent(existingEntry.relativePath, isDirectory: false)
+            .standardizedFileURL
+
+        guard fileManager.fileExists(atPath: previousURL.path) else {
+            return false
+        }
+
+        try moveKnownLocalFile(from: previousURL, to: plan.targetURL)
+        return true
+    }
+
+    private func moveKnownLocalFile(from sourceURL: URL, to targetURL: URL) throws {
+        try fileManager.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if sourceURL.standardizedFileURL == targetURL.standardizedFileURL {
+            return
+        }
+
+        if fileManager.fileExists(atPath: targetURL.path) {
+            try fileManager.removeItem(at: targetURL)
+        }
+
+        do {
+            try fileManager.moveItem(at: sourceURL, to: targetURL)
+        } catch {
+            try fileManager.copyItem(at: sourceURL, to: targetURL)
+            try? fileManager.removeItem(at: sourceURL)
+        }
+    }
+
+    private func applyDownloadedFileAtomically(downloadedFileURL: URL, targetURL: URL) throws -> Bool {
+        try fileManager.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        let stagingURL = targetURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".studipsync-\(UUID().uuidString).part", isDirectory: false)
+
+        if fileManager.fileExists(atPath: stagingURL.path) {
+            try? fileManager.removeItem(at: stagingURL)
+        }
+
+        do {
+            try fileManager.moveItem(at: downloadedFileURL, to: stagingURL)
+        } catch {
+            try fileManager.copyItem(at: downloadedFileURL, to: stagingURL)
+            try? fileManager.removeItem(at: downloadedFileURL)
+        }
+
+        if fileManager.fileExists(atPath: targetURL.path) {
+            let isUnchanged = try filesHaveSameContent(lhs: stagingURL, rhs: targetURL)
+            if isUnchanged {
+                try? fileManager.removeItem(at: stagingURL)
+                return true
+            }
+
+            do {
+                _ = try fileManager.replaceItemAt(targetURL, withItemAt: stagingURL)
+            } catch {
+                try? fileManager.removeItem(at: targetURL)
+                try fileManager.moveItem(at: stagingURL, to: targetURL)
+            }
+            return false
+        }
+
+        try fileManager.moveItem(at: stagingURL, to: targetURL)
         return false
+    }
+
+    private func filesHaveSameContent(lhs: URL, rhs: URL) throws -> Bool {
+        let lhsAttributes = try fileManager.attributesOfItem(atPath: lhs.path)
+        let rhsAttributes = try fileManager.attributesOfItem(atPath: rhs.path)
+
+        let lhsSize = (lhsAttributes[.size] as? NSNumber)?.int64Value ?? -1
+        let rhsSize = (rhsAttributes[.size] as? NSNumber)?.int64Value ?? -1
+        if lhsSize != rhsSize {
+            return false
+        }
+
+        let lhsDigest = try sha256Hex(of: lhs)
+        let rhsDigest = try sha256Hex(of: rhs)
+        return lhsDigest == rhsDigest
+    }
+
+    private func sha256Hex(of fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer {
+            try? handle.close()
+        }
+
+        var hasher = SHA256()
+        while true {
+            let chunk = try handle.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty {
+                break
+            }
+            hasher.update(data: chunk)
+        }
+
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func resolveRootFolderURL(from bookmarkData: Data) async throws -> URL {
@@ -426,6 +660,19 @@ actor SyncEngine {
         return path.isEmpty ? nil : path
     }
 
+    private func normalizedHeaderValue(_ headers: [AnyHashable: Any], key: String) -> String? {
+        for (headerKey, value) in headers {
+            let normalizedKey = String(describing: headerKey).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard normalizedKey == key.lowercased() else {
+                continue
+            }
+
+            let text = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        }
+        return nil
+    }
+
     private func manifestFileURL(baseURL: URL, rootURL: URL) -> URL {
         let baseURLKey = normalizedBaseURLKey(baseURL)
         let rootPath = rootURL.standardizedFileURL.path
@@ -438,20 +685,27 @@ actor SyncEngine {
     private func loadManifest(baseURL: URL, rootURL: URL) throws -> SyncManifest {
         let fileURL = manifestFileURL(baseURL: baseURL, rootURL: rootURL)
         guard let data = try? Data(contentsOf: fileURL) else {
-            return SyncManifest(version: 1, entries: [:])
+            return SyncManifest(version: currentManifestVersion, entries: [:])
         }
 
-        guard let manifest = try? JSONDecoder().decode(SyncManifest.self, from: data),
-              manifest.version == 1 else {
-            return SyncManifest(version: 1, entries: [:])
+        guard var manifest = try? JSONDecoder().decode(SyncManifest.self, from: data) else {
+            return SyncManifest(version: currentManifestVersion, entries: [:])
         }
 
+        guard manifest.version >= 1, manifest.version <= currentManifestVersion else {
+            return SyncManifest(version: currentManifestVersion, entries: [:])
+        }
+
+        manifest.version = currentManifestVersion
         return manifest
     }
 
     private func saveManifest(_ manifest: SyncManifest, baseURL: URL, rootURL: URL) throws {
+        var persistable = manifest
+        persistable.version = currentManifestVersion
+
         let fileURL = manifestFileURL(baseURL: baseURL, rootURL: rootURL)
-        let data = try JSONEncoder().encode(manifest)
+        let data = try JSONEncoder().encode(persistable)
         try data.write(to: fileURL, options: .atomic)
     }
 

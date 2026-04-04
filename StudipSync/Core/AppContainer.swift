@@ -35,7 +35,11 @@ final class AppContainer {
         self.keychainService = keychainService
         self.syncEngine = syncEngine
         self.statusController = statusController
-        self.syncScheduler = SyncScheduler(syncEngine: syncEngine, statusController: statusController)
+        self.syncScheduler = SyncScheduler(
+            syncEngine: syncEngine,
+            statusController: statusController,
+            settingsStore: settingsStore
+        )
         self.semesterSelectionStore = SemesterSelectionStore(settingsStore: settingsStore)
         self.apiClient = apiClient
         self.resourceRepository = resourceRepository

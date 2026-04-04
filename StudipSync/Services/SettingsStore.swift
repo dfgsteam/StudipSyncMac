@@ -30,6 +30,21 @@ final class SettingsStore {
         persist()
     }
 
+    func updateMaxConcurrentFileDownloads(_ count: Int) {
+        configuration.maxConcurrentFileDownloads = min(4, max(2, count))
+        persist()
+    }
+
+    func updatePauseSyncOnLowPowerMode(_ isEnabled: Bool) {
+        configuration.pauseSyncOnLowPowerMode = isEnabled
+        persist()
+    }
+
+    func updateSyncOnlyOnWiFi(_ isEnabled: Bool) {
+        configuration.syncOnlyOnWiFi = isEnabled
+        persist()
+    }
+
     func updateRootFolderBookmark(_ bookmark: Data?) {
         configuration.rootFolderBookmark = bookmark
         persist()
