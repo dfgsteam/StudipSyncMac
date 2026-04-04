@@ -35,6 +35,8 @@ actor StudIPResourceRepository {
     private let forumRepository: StudIPForumRepository
     private let userDirectoryRepository: StudIPUserDirectoryRepository
     private let instituteRepository: StudIPInstituteRepository
+    private var syncedFileLookupHitCache: [String: URL] = [:]
+    private var syncedFileLookupMissCache: Set<String> = []
 
     init(apiClient: StudIPAPIClient, settingsStore: SettingsStore, metadataCache: MetadataCache) {
         self.apiClient = apiClient
@@ -77,6 +79,78 @@ actor StudIPResourceRepository {
 
     func currentBaseURL() async -> URL {
         await MainActor.run { settingsStore.configuration.baseURL }
+    }
+
+    func findSyncedLocalFileURL(fileRefID: String, fileName: String?) async -> URL? {
+        guard let rootURL = await resolveConfiguredRootFolderURL() else {
+            return nil
+        }
+
+        let normalizedID = canonicalStudIPID(fileRefID).lowercased()
+        let normalizedName = fileName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let cacheKey = "\(rootURL.standardizedFileURL.path)|\(normalizedID)|\(normalizedName ?? "")"
+
+        if let cached = syncedFileLookupHitCache[cacheKey] {
+            return cached
+        }
+        if syncedFileLookupMissCache.contains(cacheKey) {
+            return nil
+        }
+
+        let fileManager = FileManager.default
+        let didAccessScope = rootURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessScope {
+                rootURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let candidateNames: Set<String> = {
+            var names: Set<String> = []
+            if let normalizedName, !normalizedName.isEmpty {
+                names.insert(normalizedName)
+                names.insert(sanitizedFileLookupName(normalizedName))
+                names.insert("\(normalizedID)-\(normalizedName)")
+                names.insert("\(normalizedID)-\(sanitizedFileLookupName(normalizedName))")
+            }
+            return names
+        }()
+
+        let propertyKeys: [URLResourceKey] = [.isRegularFileKey]
+        guard let enumerator = fileManager.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: propertyKeys,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            syncedFileLookupMissCache.insert(cacheKey)
+            return nil
+        }
+
+        for case let candidateURL as URL in enumerator {
+            guard let values = try? candidateURL.resourceValues(forKeys: Set(propertyKeys)),
+                  values.isRegularFile == true else {
+                continue
+            }
+
+            let candidateName = candidateURL.lastPathComponent.lowercased()
+            if candidateNames.contains(candidateName) {
+                syncedFileLookupHitCache[cacheKey] = candidateURL
+                return candidateURL
+            }
+
+            let candidateStem = candidateURL.deletingPathExtension().lastPathComponent.lowercased()
+            if candidateStem == normalizedID
+                || candidateStem.hasPrefix("\(normalizedID)-")
+                || candidateName.contains(normalizedID) {
+                syncedFileLookupHitCache[cacheKey] = candidateURL
+                return candidateURL
+            }
+        }
+
+        syncedFileLookupMissCache.insert(cacheKey)
+        return nil
     }
 
     func loadSemestersStaleWhileRevalidate(onRefresh: (@MainActor ([SemesterDTO]) -> Void)? = nil) async throws -> SemesterLoadResult {
@@ -291,6 +365,33 @@ actor StudIPResourceRepository {
 
     private func fetchRemoteSemesters() async throws -> [SemesterDTO] {
         try await semesterRepository.fetchSemesters(offset: defaultSemesterOffset, limit: defaultSemesterLimit)
+    }
+
+    private func resolveConfiguredRootFolderURL() async -> URL? {
+        let bookmarkData = await MainActor.run { settingsStore.configuration.rootFolderBookmark }
+        guard let bookmarkData else {
+            return nil
+        }
+
+        do {
+            var isStale = false
+            return try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        } catch {
+            AppLogger.error("Resolving root folder bookmark failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func sanitizedFileLookupName(_ raw: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let parts = raw.components(separatedBy: invalid)
+        let joined = parts.joined(separator: "_").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? "datei" : joined
     }
 
     private func debugQueryContext(semesterID: String?, courseID: String?) -> DebugQueryContext {

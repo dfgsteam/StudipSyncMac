@@ -35,12 +35,16 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Speicherort") {
+            Section("Dateipfad") {
                 Text(rootFolderDisplayText())
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Button("Root-Ordner auswählen") {
+                Text("Dateien aus der Dateiansicht werden hier bevorzugt geoeffnet, falls sie bereits synchronisiert wurden.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Sync-Ordner auswaehlen") {
                     chooseRootFolder()
                 }
             }
@@ -201,9 +205,9 @@ struct SettingsView: View {
                     relativeTo: nil
                 )
                 settingsStore.updateRootFolderBookmark(bookmark)
-                message = "Root-Ordner gespeichert."
+                message = "Sync-Ordner gespeichert."
             } catch {
-                message = "Root-Ordner konnte nicht gespeichert werden."
+                message = "Sync-Ordner konnte nicht gespeichert werden."
                 AppLogger.error("Storing root folder bookmark failed: \(error.localizedDescription)")
             }
         }
@@ -211,7 +215,7 @@ struct SettingsView: View {
 
     private func rootFolderDisplayText() -> String {
         guard let bookmark = settingsStore.configuration.rootFolderBookmark else {
-            return "Kein Root-Ordner ausgewaehlt"
+            return "Kein Sync-Ordner ausgewaehlt"
         }
 
         do {
@@ -222,9 +226,9 @@ struct SettingsView: View {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
-            return isStale ? "Ordnerpfad veraltet: \(url.path)" : "Aktueller Root-Ordner: \(url.path)"
+            return isStale ? "Ordnerpfad veraltet: \(url.path)" : "Aktueller Sync-Ordner: \(url.path)"
         } catch {
-            return "Root-Ordner konnte nicht gelesen werden"
+            return "Sync-Ordner konnte nicht gelesen werden"
         }
     }
 }

@@ -170,6 +170,23 @@ extension ContentView {
 
         Task {
             do {
+                if let syncedURL = await repository.findSyncedLocalFileURL(
+                    fileRefID: fileRef.id,
+                    fileName: nonEmpty(fileRef.name)
+                ) {
+                    await MainActor.run {
+                        downloadingFileIDs.remove(fileRef.id)
+                        let didAccessScope = syncedURL.startAccessingSecurityScopedResource()
+                        NSWorkspace.shared.open(syncedURL)
+                        if didAccessScope {
+                            syncedURL.stopAccessingSecurityScopedResource()
+                        }
+                        fileDownloadErrorsByFileID[fileRef.id] = nil
+                        fileErrorsByContextKey[contextKey] = nil
+                    }
+                    return
+                }
+
                 let data = try await repository.fetchFileContent(
                     fileRefID: fileRef.id,
                     fallbackDownloadPath: fileRef.downloadURLPath
@@ -202,6 +219,30 @@ extension ContentView {
 
         Task {
             do {
+                if let syncedURL = await repository.findSyncedLocalFileURL(
+                    fileRefID: fileRef.id,
+                    fileName: nonEmpty(fileRef.name)
+                ) {
+                    await MainActor.run {
+                        if let previous = quickLookSecurityScopedURL {
+                            previous.stopAccessingSecurityScopedResource()
+                            quickLookSecurityScopedURL = nil
+                        }
+                        if syncedURL.startAccessingSecurityScopedResource() {
+                            quickLookSecurityScopedURL = syncedURL
+                        }
+                        previewingFileIDs.remove(fileRef.id)
+                        selectedQuickLookFile = QuickLookPreviewFile(
+                            id: "\(fileRef.id)-\(syncedURL.path)",
+                            title: nonEmpty(fileRef.name) ?? "Datei \(fileRef.id)",
+                            url: syncedURL
+                        )
+                        filePreviewErrorsByFileID[fileRef.id] = nil
+                        fileErrorsByContextKey[contextKey] = nil
+                    }
+                    return
+                }
+
                 let data = try await repository.fetchFileContent(
                     fileRefID: fileRef.id,
                     fallbackDownloadPath: fileRef.downloadURLPath
@@ -232,18 +273,9 @@ extension ContentView {
     func makeDownloadURL(for fileRef: CourseFileRefDTO) throws -> URL {
         let fileManager = FileManager.default
         let baseName = sanitizedFilename(nonEmpty(fileRef.name) ?? "datei-\(fileRef.id)")
-
-        let preferredDirectory = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-
-        do {
-            try fileManager.createDirectory(at: preferredDirectory, withIntermediateDirectories: true)
-            return uniqueFileURL(in: preferredDirectory, preferredName: baseName)
-        } catch {
-            let fallbackDirectory = fileManager.temporaryDirectory
-            try fileManager.createDirectory(at: fallbackDirectory, withIntermediateDirectories: true)
-            return uniqueFileURL(in: fallbackDirectory, preferredName: baseName)
-        }
+        let tempDirectory = fileManager.temporaryDirectory.appendingPathComponent("StudipSyncDownloads", isDirectory: true)
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        return uniqueFileURL(in: tempDirectory, preferredName: baseName)
     }
 
     func makeQuickLookURL(for fileRef: CourseFileRefDTO) throws -> URL {
@@ -287,6 +319,12 @@ extension ContentView {
 
             QuickLookPreviewContainer(url: previewFile.url)
                 .frame(minWidth: 760, minHeight: 520)
+        }
+        .onDisappear {
+            if let scopedURL = quickLookSecurityScopedURL {
+                scopedURL.stopAccessingSecurityScopedResource()
+                quickLookSecurityScopedURL = nil
+            }
         }
     }
 

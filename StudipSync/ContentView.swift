@@ -102,6 +102,7 @@ struct ContentView: View {
     @State var previewingFileIDs: Set<String> = []
     @State var filePreviewErrorsByFileID: [String: String] = [:]
     @State var selectedQuickLookFile: QuickLookPreviewFile?
+    @State var quickLookSecurityScopedURL: URL?
     @State var isLoadingFiles = false
     @State var chatsByCourseID: [String: [StudIPResourceRepository.CourseChatThread]] = [:]
     @State var chatErrorsByCourseID: [String: String] = [:]

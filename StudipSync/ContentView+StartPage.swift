@@ -66,12 +66,15 @@ extension ContentView {
 
     var startHeroBanner: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
+            Image("StudipLogo")
+                .resizable()
+                .scaledToFit()
                 .frame(width: 36, height: 36)
-                .background(Color.accentColor.opacity(0.14))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+                }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Uebersicht")

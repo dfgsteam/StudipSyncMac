@@ -28,8 +28,16 @@ extension ContentView {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("StudIP Sync")
-                        .font(.headline.weight(.semibold))
+                    HStack(spacing: 8) {
+                        Image("StudipLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                        Text("StudIP Sync")
+                            .font(.headline.weight(.semibold))
+                    }
                     HStack(spacing: 6) {
                         Image(systemName: statusController.syncState.symbolName)
                         Text(statusController.syncState.statusText)
