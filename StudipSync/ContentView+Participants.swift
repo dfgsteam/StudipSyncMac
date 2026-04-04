@@ -4,8 +4,6 @@ import SwiftUI
 extension ContentView {
     static let participantNameColumnWidth: CGFloat = 250
     static let participantEmailColumnWidth: CGFloat = 220
-    static let participantLabelColumnWidth: CGFloat = 170
-    static let participantPositionColumnWidth: CGFloat = 56
     static let participantGroupColumnWidth: CGFloat = 56
     static let participantActionsColumnWidth: CGFloat = 88
 
@@ -71,14 +69,13 @@ extension ContentView {
         title: String,
         participants: [StudIPResourceRepository.CourseParticipant]
     ) -> some View {
+        let sortedParticipants = sortedParticipantsForDisplay(participants)
         let tableWidth =
             Self.participantNameColumnWidth
             + Self.participantEmailColumnWidth
-            + Self.participantLabelColumnWidth
-            + Self.participantPositionColumnWidth
             + Self.participantGroupColumnWidth
             + Self.participantActionsColumnWidth
-            + 12 * 5
+            + 12 * 3
 
         return VStack(alignment: .leading, spacing: 6) {
             Label("\(title) (\(participants.count))", systemImage: "person.3.sequence")
@@ -88,26 +85,9 @@ extension ContentView {
             ScrollView(.horizontal) {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                     GridRow {
-                        Text("Name")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: Self.participantNameColumnWidth, alignment: .leading)
-                        Text("E-Mail")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: Self.participantEmailColumnWidth, alignment: .leading)
-                        Text("Label")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: Self.participantLabelColumnWidth, alignment: .leading)
-                        Text("Pos.")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: Self.participantPositionColumnWidth, alignment: .leading)
-                        Text("Gr.")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: Self.participantGroupColumnWidth, alignment: .leading)
+                        participantSortHeader("Name", field: .name, width: Self.participantNameColumnWidth)
+                        participantSortHeader("E-Mail", field: .email, width: Self.participantEmailColumnWidth)
+                        participantSortHeader("Gr.", field: .group, width: Self.participantGroupColumnWidth)
                         Text("Aktionen")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -115,9 +95,9 @@ extension ContentView {
                     }
 
                     Divider()
-                        .gridCellColumns(6)
+                        .gridCellColumns(4)
 
-                    ForEach(participants) { participant in
+                    ForEach(sortedParticipants) { participant in
                         GridRow(alignment: .center) {
                             Text(participant.displayName)
                                 .lineLimit(1)
@@ -129,15 +109,6 @@ extension ContentView {
                                 .lineLimit(1)
                                 .textSelection(.enabled)
                                 .frame(width: Self.participantEmailColumnWidth, alignment: .leading)
-
-                            Text(nonEmpty(participant.label) ?? "—")
-                                .foregroundStyle(nonEmpty(participant.label) == nil ? .secondary : .primary)
-                                .lineLimit(1)
-                                .frame(width: Self.participantLabelColumnWidth, alignment: .leading)
-
-                            Text(participant.position.map(String.init) ?? "—")
-                                .foregroundStyle(participant.position == nil ? .secondary : .primary)
-                                .frame(width: Self.participantPositionColumnWidth, alignment: .leading)
 
                             Text(participant.group.map(String.init) ?? "—")
                                 .foregroundStyle(participant.group == nil ? .secondary : .primary)
@@ -189,18 +160,88 @@ extension ContentView {
             grouped[roleKey, default: []].append(participant)
         }
 
-        for roleKey in grouped.keys {
-            grouped[roleKey]?.sort { lhs, rhs in
-                let lhsPosition = lhs.position ?? Int.max
-                let rhsPosition = rhs.position ?? Int.max
-                if lhsPosition != rhsPosition {
-                    return lhsPosition < rhsPosition
-                }
-                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-            }
-        }
-
         return grouped
+    }
+
+    @ViewBuilder
+    func participantSortHeader(_ title: String, field: ParticipantSortField, width: CGFloat) -> some View {
+        Button {
+            toggleParticipantSort(field)
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                if participantSortField == field {
+                    Image(systemName: isParticipantSortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: width, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    func toggleParticipantSort(_ field: ParticipantSortField) {
+        if participantSortField == field {
+            isParticipantSortAscending.toggle()
+        } else {
+            participantSortField = field
+            isParticipantSortAscending = true
+        }
+    }
+
+    func sortedParticipantsForDisplay(
+        _ participants: [StudIPResourceRepository.CourseParticipant]
+    ) -> [StudIPResourceRepository.CourseParticipant] {
+        participants.sorted { lhs, rhs in
+            if isParticipantSortAscending {
+                return participantComesBefore(lhs, rhs, by: participantSortField)
+            }
+            return participantComesBefore(rhs, lhs, by: participantSortField)
+        }
+    }
+
+    func participantComesBefore(
+        _ lhs: StudIPResourceRepository.CourseParticipant,
+        _ rhs: StudIPResourceRepository.CourseParticipant,
+        by field: ParticipantSortField
+    ) -> Bool {
+        switch field {
+        case .name:
+            let lhsName = lhs.displayName
+            let rhsName = rhs.displayName
+            if lhsName.localizedCaseInsensitiveCompare(rhsName) != .orderedSame {
+                return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+            }
+            let lhsEmail = nonEmpty(lhs.email) ?? ""
+            let rhsEmail = nonEmpty(rhs.email) ?? ""
+            if lhsEmail.localizedCaseInsensitiveCompare(rhsEmail) != .orderedSame {
+                return lhsEmail.localizedCaseInsensitiveCompare(rhsEmail) == .orderedAscending
+            }
+            return lhs.userID.localizedCaseInsensitiveCompare(rhs.userID) == .orderedAscending
+
+        case .email:
+            let lhsEmail = nonEmpty(lhs.email)
+            let rhsEmail = nonEmpty(rhs.email)
+            if lhsEmail == nil, rhsEmail != nil { return false }
+            if lhsEmail != nil, rhsEmail == nil { return true }
+            let lhsValue = lhsEmail ?? ""
+            let rhsValue = rhsEmail ?? ""
+            if lhsValue.localizedCaseInsensitiveCompare(rhsValue) != .orderedSame {
+                return lhsValue.localizedCaseInsensitiveCompare(rhsValue) == .orderedAscending
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+
+        case .group:
+            let lhsGroup = lhs.group ?? Int.max
+            let rhsGroup = rhs.group ?? Int.max
+            if lhsGroup != rhsGroup {
+                return lhsGroup < rhsGroup
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
     }
 
     func participantRoleKey(for permission: String?) -> String? {
@@ -265,8 +306,6 @@ extension ContentView {
             participantInfoRow("User-ID", participant.userID)
             participantInfoRow("E-Mail", nonEmpty(participant.email))
             participantInfoRow("Rolle", nonEmpty(participant.permission))
-            participantInfoRow("Label", nonEmpty(participant.label))
-            participantInfoRow("Position", participant.position.map(String.init))
             participantInfoRow("Gruppe", participant.group.map(String.init))
             participantInfoRow("Erstellt", nonEmpty(participant.mkdate))
 

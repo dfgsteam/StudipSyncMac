@@ -60,6 +60,12 @@ struct ContentView: View {
         let courseID: String?
     }
 
+    enum ParticipantSortField {
+        case name
+        case email
+        case group
+    }
+
     let statusController: MenuBarStatusController
     let syncScheduler: SyncScheduler
     let semesterSelectionStore: SemesterSelectionStore
@@ -121,6 +127,8 @@ struct ContentView: View {
     @State var participantsByCourseID: [String: [StudIPResourceRepository.CourseParticipant]] = [:]
     @State var participantErrorsByCourseID: [String: String] = [:]
     @State var isLoadingParticipants = false
+    @State var participantSortField: ParticipantSortField = .name
+    @State var isParticipantSortAscending = true
     @State var courseNewsByCourseID: [String: [NewsDTO]] = [:]
     @State var courseNewsErrorsByCourseID: [String: String] = [:]
     @State var isLoadingCourseNews = false
