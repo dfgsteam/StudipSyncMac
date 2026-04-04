@@ -1,9 +1,14 @@
 # StudipSync Roadmap
 
-Stand: 2026-04-01
+Stand: 2026-04-04
 
 ## Zielbild
 Eine stabile, akkusparende macOS Menu-Bar-App, die Dateien aus konfigurierbaren Stud.IP-Instanzen automatisch in lokale Ordner synchronisiert, inklusive Semester-Auswahl, sicherer Keychain-Auth und robuster Offline-/Cache-Unterstuetzung.
+
+## Status
+- Phase 0: abgeschlossen (2026-04-04)
+- Phase 1: abgeschlossen (2026-04-04)
+- Phase 2-5: offen
 
 ## Phase 0: Fundament (Woche 1)
 Zeitraum: 2026-04-01 bis 2026-04-07

@@ -45,7 +45,11 @@ actor StudIPResourceRepository {
         self.metadataCache = metadataCache
 
         let responseDecoder = StudIPResponseDecoder()
-        let userRepository = StudIPUserRepository(apiClient: apiClient, responseDecoder: responseDecoder)
+        let userRepository = StudIPUserRepository(
+            apiClient: apiClient,
+            settingsStore: settingsStore,
+            responseDecoder: responseDecoder
+        )
 
         self.userRepository = userRepository
         self.semesterRepository = StudIPSemesterRepository(apiClient: apiClient, responseDecoder: responseDecoder)
@@ -86,12 +90,13 @@ actor StudIPResourceRepository {
         guard let rootURL = await resolveConfiguredRootFolderURL() else {
             return nil
         }
+        let baseURLNamespaceKey = await currentBaseURLNamespaceKey()
 
         let normalizedID = canonicalStudIPID(fileRefID).lowercased()
         let normalizedName = fileName?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        let cacheKey = "\(rootURL.standardizedFileURL.path)|\(normalizedID)|\(normalizedName ?? "")"
+        let cacheKey = "\(baseURLNamespaceKey)|\(rootURL.standardizedFileURL.path)|\(normalizedID)|\(normalizedName ?? "")"
 
         if let cached = syncedFileLookupHitCache[cacheKey] {
             return cached
@@ -328,6 +333,15 @@ actor StudIPResourceRepository {
             .paginate(offset: offset, limit: limit)
 
         return try? await apiClient.makeCURL(path: query.path, queryItems: query.queryItems)
+    }
+
+    private func currentBaseURLNamespaceKey() async -> String {
+        let baseURL = await MainActor.run { settingsStore.configuration.baseURL }
+        var key = baseURL.absoluteString.lowercased()
+        if key.hasSuffix("/") {
+            key.removeLast()
+        }
+        return key
     }
 
     func debugUsersSearchCURL(search: String?, offset: Int = 0, limit: Int = 100) async -> String? {

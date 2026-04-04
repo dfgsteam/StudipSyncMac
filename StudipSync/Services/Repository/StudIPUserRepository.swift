@@ -2,12 +2,19 @@ import Foundation
 
 actor StudIPUserRepository {
     private let apiClient: StudIPAPIClient
+    private let settingsStore: SettingsStore
     private let responseDecoder: StudIPResponseDecoder
+    private var cacheNamespaceKey: String?
     private var cachedCurrentUserID: String?
     private var cachedUsersByID: [String: UserDTO] = [:]
 
-    init(apiClient: StudIPAPIClient, responseDecoder: StudIPResponseDecoder = StudIPResponseDecoder()) {
+    init(
+        apiClient: StudIPAPIClient,
+        settingsStore: SettingsStore,
+        responseDecoder: StudIPResponseDecoder = StudIPResponseDecoder()
+    ) {
         self.apiClient = apiClient
+        self.settingsStore = settingsStore
         self.responseDecoder = responseDecoder
     }
 
@@ -20,6 +27,8 @@ actor StudIPUserRepository {
     }
 
     func ensureCurrentUserID() async throws -> String {
+        await synchronizeCacheNamespaceIfNeeded()
+
         if let cachedCurrentUserID, !cachedCurrentUserID.isEmpty {
             return cachedCurrentUserID
         }
@@ -31,6 +40,8 @@ actor StudIPUserRepository {
     }
 
     func fetchUserProfile(id: String) async throws -> UserDTO {
+        await synchronizeCacheNamespaceIfNeeded()
+
         let normalizedID = canonicalStudIPID(id)
         if let cached = cachedUsersByID[normalizedID] {
             return cached
@@ -42,6 +53,8 @@ actor StudIPUserRepository {
     }
 
     func fetchUsers(userIDs: [String]) async -> [String: UserDTO] {
+        await synchronizeCacheNamespaceIfNeeded()
+
         var usersByID: [String: UserDTO] = [:]
         usersByID.reserveCapacity(userIDs.count)
 
@@ -62,5 +75,27 @@ actor StudIPUserRepository {
             from: data,
             fallbackObjectKeys: Resource.fallbackCollectionKeys + ["data", "item"]
         )
+    }
+
+    private func synchronizeCacheNamespaceIfNeeded() async {
+        let currentNamespaceKey = await MainActor.run {
+            Self.baseURLNamespaceKey(for: settingsStore.configuration.baseURL)
+        }
+
+        guard cacheNamespaceKey != currentNamespaceKey else {
+            return
+        }
+
+        cacheNamespaceKey = currentNamespaceKey
+        cachedCurrentUserID = nil
+        cachedUsersByID.removeAll()
+    }
+
+    private static func baseURLNamespaceKey(for baseURL: URL) -> String {
+        var key = baseURL.absoluteString.lowercased()
+        if key.hasSuffix("/") {
+            key.removeLast()
+        }
+        return key
     }
 }

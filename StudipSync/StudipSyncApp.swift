@@ -34,6 +34,12 @@ struct StudipSyncApp: App {
             .onChange(of: container.settingsStore.configuration.syncIntervalMinutes) { _, newValue in
                 container.syncScheduler.start(intervalMinutes: newValue)
             }
+            .onChange(of: container.settingsStore.configuration.baseURL) { _, _ in
+                container.semesterSelectionStore.reloadForCurrentBaseURL()
+                Task {
+                    await container.resourceRepository.warmupCurrentUserID()
+                }
+            }
         }
         .windowStyle(.hiddenTitleBar)
     }

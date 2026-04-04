@@ -58,6 +58,33 @@ struct StudipSyncTests {
     }
 
     @Test
+    @MainActor
+    func semesterSelectionStoreSeparatesSelectionsByBaseURL() {
+        let suiteName = "StudipSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = SettingsStore(defaults: defaults)
+        settings.updateBaseURL(URL(string: "https://instanz-a.example")!)
+
+        let selectionStore = SemesterSelectionStore(settingsStore: settings, defaults: defaults)
+        selectionStore.setActive(true, semesterID: "semester-a")
+        #expect(selectionStore.isActive(semesterID: "semester-a"))
+
+        settings.updateBaseURL(URL(string: "https://instanz-b.example")!)
+        selectionStore.reloadForCurrentBaseURL()
+        #expect(!selectionStore.isActive(semesterID: "semester-a"))
+
+        selectionStore.setActive(true, semesterID: "semester-b")
+        #expect(selectionStore.isActive(semesterID: "semester-b"))
+
+        settings.updateBaseURL(URL(string: "https://instanz-a.example")!)
+        selectionStore.reloadForCurrentBaseURL()
+        #expect(selectionStore.isActive(semesterID: "semester-a"))
+        #expect(!selectionStore.isActive(semesterID: "semester-b"))
+    }
+
+    @Test
     func apiPathResolverBuildsCanonicalCoursesURLFromHostBaseURL() {
         let baseURL = URL(string: "https://studip.uni-goettingen.de")!
         let url = StudIPAPIPathResolver.buildURL(baseURL: baseURL, path: "/v1/courses", queryItems: [])
