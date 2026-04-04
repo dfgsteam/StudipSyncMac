@@ -71,7 +71,9 @@ struct StudipSyncApp: App {
         Settings {
             SettingsView(
                 settingsStore: container.settingsStore,
-                keychainService: container.keychainService
+                keychainService: container.keychainService,
+                metadataCache: container.metadataCache,
+                sharedCourseParticipationCache: container.sharedCourseParticipationCache
             )
         }
     }

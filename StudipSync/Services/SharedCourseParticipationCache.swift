@@ -56,6 +56,18 @@ actor SharedCourseParticipationCache {
         try data.write(to: fileURL, options: .atomic)
     }
 
+    func clearAll() throws {
+        try ensureCacheDirectoryExists()
+        let contents = try fileManager.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        for url in contents where url.lastPathComponent.hasPrefix("shared-courses.") && url.pathExtension == "json" {
+            try? fileManager.removeItem(at: url)
+        }
+    }
+
     private func cacheFileURL(baseURL: URL, ownerUserID: String) -> URL {
         let digest = SHA256.hash(
             data: Data("\(normalizedBaseURLString(baseURL))|\(canonicalStudIPID(ownerUserID))".utf8)
@@ -87,4 +99,3 @@ actor SharedCourseParticipationCache {
         try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
 }
-

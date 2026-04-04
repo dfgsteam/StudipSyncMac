@@ -113,6 +113,20 @@ struct SyncRunReport: Sendable {
     }
 }
 
+protocol SyncEngineRepository: Sendable {
+    func loadSemestersStaleWhileRevalidate(
+        onRefresh: (@MainActor ([SemesterDTO]) -> Void)?
+    ) async throws -> StudIPSemesterLoadResult
+    func fetchCourses(for semesterID: String, offset: Int?, limit: Int?) async throws -> [CourseDTO]
+    func fetchCourseFiles(courseID: String, offset: Int, limit: Int) async throws -> [StudIPCourseFileRef]
+    func downloadFileContent(
+        fileRefID: String,
+        fallbackDownloadPath: String?,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> StudIPFileRepository.FileContentDownloadResult
+}
+
 actor SyncEngine {
     enum SyncEngineError: LocalizedError {
         case rootFolderNotConfigured
@@ -187,7 +201,7 @@ actor SyncEngine {
 
     private let currentManifestVersion = 2
 
-    private let repository: StudIPResourceRepository
+    private let repository: any SyncEngineRepository
     private let settingsStore: SettingsStore
     private let fileManager: FileManager
     private let stateDirectory: URL
@@ -195,7 +209,7 @@ actor SyncEngine {
     private var isRunning = false
 
     init(
-        repository: StudIPResourceRepository,
+        repository: any SyncEngineRepository,
         settingsStore: SettingsStore,
         fileManager: FileManager = .default,
         stateDirectory: URL? = nil
@@ -270,7 +284,7 @@ actor SyncEngine {
         var syncErrors: [String] = []
         let activeSemesterIDsCanonical = Set(configuration.activeSemesterIDs.map(canonicalStudIPID))
 
-        let semesterResult = try await repository.loadSemestersStaleWhileRevalidate()
+        let semesterResult = try await repository.loadSemestersStaleWhileRevalidate(onRefresh: nil)
         let semestersByID = Dictionary(uniqueKeysWithValues: semesterResult.semesters.map { (canonicalStudIPID($0.id), $0) })
 
         for semesterID in activeSemesterIDs {
@@ -819,3 +833,5 @@ actor SyncEngine {
         }
     }
 }
+
+extension StudIPResourceRepository: SyncEngineRepository {}

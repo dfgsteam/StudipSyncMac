@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Network
 
@@ -48,6 +49,7 @@ final class SyncNetworkMonitor {
 
     private var isSatisfied = false
     private var isWiFi = false
+    private var isConstrained = false
 
     init(monitor: NWPathMonitor = NWPathMonitor()) {
         self.monitor = monitor
@@ -56,6 +58,7 @@ final class SyncNetworkMonitor {
             self.lock.lock()
             self.isSatisfied = path.status == .satisfied
             self.isWiFi = path.usesInterfaceType(.wifi)
+            self.isConstrained = path.isConstrained
             self.lock.unlock()
         }
 
@@ -71,10 +74,48 @@ final class SyncNetworkMonitor {
         defer { lock.unlock() }
         return isSatisfied && isWiFi
     }
+
+    var isEligibleForBackgroundSync: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isSatisfied && isWiFi && !isConstrained
+    }
+}
+
+enum SyncErrorCategory: String {
+    case offline
+    case unauthorized
+    case configuration
+    case serverTemporary
+    case localAccess
+    case unknown
+
+    var isRetryable: Bool {
+        switch self {
+        case .offline, .serverTemporary:
+            return true
+        case .unauthorized, .configuration, .localAccess, .unknown:
+            return false
+        }
+    }
+}
+
+struct SyncErrorClassification {
+    let category: SyncErrorCategory
+    let userMessage: String
+
+    var isRetryable: Bool {
+        category.isRetryable
+    }
 }
 
 @MainActor
 final class SyncScheduler {
+    private enum RunTrigger {
+        case scheduled
+        case manual
+    }
+
     private enum RunFeedback {
         case successWithChanges
         case successWithoutChanges
@@ -92,9 +133,16 @@ final class SyncScheduler {
     private let minimumDelaySeconds = 5.0
     private let minimumToleranceSeconds = 15.0
     private let toleranceFactor = 0.2
+    private let maxImmediateRetries = 2
+    private let retryBaseDelaySeconds = 2.0
 
     private var consecutiveIdleRuns = 0
     private var consecutiveFailures = 0
+
+    private var configuredIntervalMinutes: Int?
+    private var isSystemSleeping = false
+    private var willSleepObserver: NSObjectProtocol?
+    private var didWakeObserver: NSObjectProtocol?
 
     init(
         syncEngine: SyncEngine,
@@ -106,29 +154,57 @@ final class SyncScheduler {
         self.statusController = statusController
         self.settingsStore = settingsStore
         self.networkMonitor = networkMonitor
+        registerSleepWakeObservers()
+    }
+
+    deinit {
+        let center = NSWorkspace.shared.notificationCenter
+        if let willSleepObserver {
+            center.removeObserver(willSleepObserver)
+        }
+        if let didWakeObserver {
+            center.removeObserver(didWakeObserver)
+        }
     }
 
     func start(intervalMinutes: Int) {
-        stop()
         let normalizedIntervalMinutes = max(minimumIntervalMinutes, intervalMinutes)
+        configuredIntervalMinutes = normalizedIntervalMinutes
         let toleranceSeconds = scheduleToleranceSeconds(for: normalizedIntervalMinutes)
+
         AppLogger.info(
             "Sync scheduler started | interval=\(normalizedIntervalMinutes)m tolerance<=\(Int(toleranceSeconds))s"
         )
 
+        launchLoop(intervalMinutes: normalizedIntervalMinutes, toleranceSeconds: toleranceSeconds, runImmediately: true)
+    }
+
+    func stop() {
+        cancelLoop(clearConfiguration: true)
+    }
+
+    func triggerManualSync() {
+        Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let feedback = await self.runSyncWithStatusUpdate(trigger: .manual)
+            self.apply(feedback: feedback)
+        }
+    }
+
+    private func launchLoop(intervalMinutes: Int, toleranceSeconds: Double, runImmediately: Bool) {
+        cancelLoop(clearConfiguration: false)
+
         task = Task(priority: .utility) { [weak self] in
             guard let self else { return }
 
+            if runImmediately {
+                let feedback = await self.runSyncWithStatusUpdate(trigger: .scheduled)
+                self.apply(feedback: feedback)
+            }
+
             while !Task.isCancelled {
-                let feedback = await self.runSyncWithStatusUpdate()
-                await self.apply(feedback: feedback)
-
-                if Task.isCancelled {
-                    return
-                }
-
-                let delaySeconds = await self.nextDelaySeconds(
-                    intervalMinutes: normalizedIntervalMinutes,
+                let delaySeconds = self.nextDelaySeconds(
+                    intervalMinutes: intervalMinutes,
                     toleranceSeconds: toleranceSeconds
                 )
 
@@ -137,63 +213,139 @@ final class SyncScheduler {
                 } catch {
                     return
                 }
+
+                if Task.isCancelled {
+                    return
+                }
+
+                let feedback = await self.runSyncWithStatusUpdate(trigger: .scheduled)
+                self.apply(feedback: feedback)
             }
         }
     }
 
-    func stop() {
+    private func cancelLoop(clearConfiguration: Bool) {
         task?.cancel()
         task = nil
-    }
-
-    func triggerManualSync() {
-        Task(priority: .userInitiated) { [weak self] in
-            guard let self else { return }
-            let feedback = await self.runSyncWithStatusUpdate()
-            await self.apply(feedback: feedback)
+        if clearConfiguration {
+            configuredIntervalMinutes = nil
         }
     }
 
-    private func runSyncWithStatusUpdate() async -> RunFeedback {
-        if shouldPauseForLowPowerMode() {
-            statusController?.setIdle()
-            AppLogger.info("Sync paused due to Low Power mode policy")
-            return .skipped
-        }
-
-        if shouldPauseForWiFiPolicy() {
-            statusController?.setOffline()
-            AppLogger.info("Sync paused due to WiFi-only policy")
-            return .skipped
-        }
-
-        statusController?.setRunning()
-
-        do {
-            let report = try await syncEngine.runSync()
-            guard report.didRun else {
+    private func runSyncWithStatusUpdate(trigger: RunTrigger) async -> RunFeedback {
+        if trigger != .manual {
+            if isSystemSleeping {
                 statusController?.setIdle()
                 return .skipped
             }
 
-            statusController?.setSuccess()
-            return report.hasChanges ? .successWithChanges : .successWithoutChanges
-        } catch let urlError as URLError {
-            if urlError.code == .notConnectedToInternet
-                || urlError.code == .networkConnectionLost
-                || urlError.code == .cannotFindHost
-                || urlError.code == .cannotConnectToHost {
-                statusController?.setOffline()
-            } else {
-                statusController?.setError(urlError.localizedDescription)
+            if shouldPauseForLowPowerMode() {
+                statusController?.setIdle()
+                AppLogger.info("Sync paused due to Low Power mode policy")
+                return .skipped
             }
-            AppLogger.error("Sync failed: \(urlError.localizedDescription)")
-            return .failure
-        } catch {
-            statusController?.setError(error.localizedDescription)
-            AppLogger.error("Sync failed: \(error.localizedDescription)")
-            return .failure
+
+            if shouldPauseForWiFiPolicy() {
+                statusController?.setOffline()
+                AppLogger.info("Sync paused due to WiFi-only or Low-Data policy")
+                return .skipped
+            }
         }
+
+        statusController?.setRunning()
+
+        var retryAttempt = 0
+        while true {
+            do {
+                let report = try await syncEngine.runSync()
+                guard report.didRun else {
+                    statusController?.setIdle()
+                    return .skipped
+                }
+
+                statusController?.setSuccess()
+                return report.hasChanges ? .successWithChanges : .successWithoutChanges
+            } catch {
+                let classification = classify(error)
+                if classification.isRetryable, retryAttempt < maxImmediateRetries {
+                    retryAttempt += 1
+                    let retryDelay = retryDelaySeconds(forAttempt: retryAttempt)
+                    AppLogger.error(
+                        "Sync failed [\(classification.category.rawValue)] attempt=\(retryAttempt) retryIn=\(Int(retryDelay))s: \(classification.userMessage)"
+                    )
+
+                    do {
+                        try await Task.sleep(for: .seconds(retryDelay))
+                    } catch {
+                        return .failure
+                    }
+                    continue
+                }
+
+                if classification.category == .offline {
+                    statusController?.setOffline()
+                } else {
+                    statusController?.setError(classification.userMessage)
+                }
+
+                AppLogger.error("Sync failed [\(classification.category.rawValue)]: \(classification.userMessage)")
+                return .failure
+            }
+        }
+    }
+
+    private func classify(_ error: Error) -> SyncErrorClassification {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return SyncErrorClassification(category: .offline, userMessage: "Offline: \(urlError.localizedDescription)")
+            case .timedOut, .resourceUnavailable, .internationalRoamingOff:
+                return SyncErrorClassification(category: .serverTemporary, userMessage: "Temporarer Netzwerkfehler: \(urlError.localizedDescription)")
+            default:
+                return SyncErrorClassification(category: .unknown, userMessage: urlError.localizedDescription)
+            }
+        }
+
+        if let apiError = error as? StudIPAPIClient.APIClientError {
+            switch apiError {
+            case .missingCredentials:
+                return SyncErrorClassification(category: .configuration, userMessage: "Fehlende Zugangsdaten. API-Key oder Login hinterlegen.")
+            case .unauthorized:
+                return SyncErrorClassification(category: .unauthorized, userMessage: "Autorisierung fehlgeschlagen. API-Key/Login pruefen.")
+            case .sandboxNetworkPermissionMissing:
+                return SyncErrorClassification(category: .configuration, userMessage: "Netzwerkzugriff in App-Sandbox aktivieren.")
+            case .httpStatus(let code, _, _):
+                if code == 401 || code == 403 {
+                    return SyncErrorClassification(category: .unauthorized, userMessage: "HTTP \(code): Autorisierung fehlgeschlagen.")
+                }
+                if code == 408 || code == 425 || code == 429 || (500...599).contains(code) {
+                    return SyncErrorClassification(category: .serverTemporary, userMessage: "HTTP \(code): temporarer Serverfehler.")
+                }
+                return SyncErrorClassification(category: .unknown, userMessage: "HTTP \(code): \(apiError.localizedDescription)")
+            case .invalidPath, .invalidResponse:
+                return SyncErrorClassification(category: .configuration, userMessage: apiError.localizedDescription)
+            }
+        }
+
+        if let syncError = error as? SyncEngine.SyncEngineError {
+            switch syncError {
+            case .rootFolderNotConfigured:
+                return SyncErrorClassification(category: .configuration, userMessage: syncError.localizedDescription)
+            case .couldNotResolveRootFolder, .rootFolderNotAccessible:
+                return SyncErrorClassification(category: .localAccess, userMessage: syncError.localizedDescription)
+            case .activeSemesterSyncFailed:
+                return SyncErrorClassification(category: .serverTemporary, userMessage: syncError.localizedDescription)
+            case .missingDownloadedFilePayload:
+                return SyncErrorClassification(category: .serverTemporary, userMessage: syncError.localizedDescription)
+            }
+        }
+
+        return SyncErrorClassification(category: .unknown, userMessage: error.localizedDescription)
+    }
+
+    private func retryDelaySeconds(forAttempt attempt: Int) -> Double {
+        let exponent = Double(max(0, attempt - 1))
+        return min(15.0, retryBaseDelaySeconds * pow(2, exponent))
     }
 
     private func shouldPauseForLowPowerMode() -> Bool {
@@ -201,7 +353,7 @@ final class SyncScheduler {
     }
 
     private func shouldPauseForWiFiPolicy() -> Bool {
-        settingsStore.configuration.syncOnlyOnWiFi && !networkMonitor.isConnectedViaWiFi
+        settingsStore.configuration.syncOnlyOnWiFi && !networkMonitor.isEligibleForBackgroundSync
     }
 
     private func apply(feedback: RunFeedback) {
@@ -247,5 +399,35 @@ final class SyncScheduler {
         )
 
         return delay
+    }
+
+    private func registerSleepWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+
+        willSleepObserver = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.isSystemSleeping = true
+            self.cancelLoop(clearConfiguration: false)
+            self.statusController?.setIdle()
+            AppLogger.info("System will sleep. Sync scheduler paused.")
+        }
+
+        didWakeObserver = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.isSystemSleeping = false
+            guard let interval = self.configuredIntervalMinutes else { return }
+
+            let tolerance = self.scheduleToleranceSeconds(for: interval)
+            self.launchLoop(intervalMinutes: interval, toleranceSeconds: tolerance, runImmediately: true)
+            AppLogger.info("System did wake. Sync scheduler resumed.")
+        }
     }
 }

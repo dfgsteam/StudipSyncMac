@@ -5,6 +5,8 @@ import SwiftUI
 struct SettingsView: View {
     let settingsStore: SettingsStore
     let keychainService: KeychainService
+    let metadataCache: MetadataCache
+    let sharedCourseParticipationCache: SharedCourseParticipationCache
 
     @State private var baseURLText: String = ""
     @State private var apiKeyText: String = ""
@@ -13,6 +15,7 @@ struct SettingsView: View {
     @State private var message: String = ""
     @State private var rootFolderAccessMessage: String = ""
     @State private var rootFolderAccessHasError = false
+    @State private var isClearingCache = false
     @State private var semesterMinFilterDate: Date = Calendar.current.date(from: DateComponents(year: 2022, month: 4, day: 1)) ?? Date()
     @State private var semesterMaxFilterDate: Date = Date()
 
@@ -165,6 +168,17 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Cache") {
+                Text("Leert lokale Cache-Daten (Metadaten + lokale Teilnehmer-Statistik).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button(isClearingCache ? "Cache wird geleert ..." : "Cache leeren") {
+                    clearLocalCaches()
+                }
+                .disabled(isClearingCache)
+            }
+
             if !message.isEmpty {
                 Text(message)
                     .font(.footnote)
@@ -279,6 +293,28 @@ struct SettingsView: View {
             } catch {
                 message = "Sync-Ordner konnte nicht gespeichert werden."
                 AppLogger.error("Storing root folder bookmark failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func clearLocalCaches() {
+        let baseURL = settingsStore.configuration.baseURL
+        isClearingCache = true
+
+        Task {
+            do {
+                try await metadataCache.clear(baseURL: baseURL)
+                try await sharedCourseParticipationCache.clearAll()
+                await MainActor.run {
+                    isClearingCache = false
+                    message = "Lokale Cache-Daten wurden geleert."
+                }
+            } catch {
+                await MainActor.run {
+                    isClearingCache = false
+                    message = "Cache konnte nicht geleert werden."
+                }
+                AppLogger.error("Clearing local caches failed: \(error.localizedDescription)")
             }
         }
     }

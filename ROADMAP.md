@@ -11,7 +11,7 @@ Eine stabile, akkusparende macOS Menu-Bar-App, die Dateien aus konfigurierbaren 
 - Phase 2: abgeschlossen (2026-04-04)
 - Phase 3: abgeschlossen (2026-04-04)
 - Phase 4: abgeschlossen (2026-04-04)
-- Phase 5: offen
+- Phase 5: abgeschlossen (2026-04-04)
 
 ## Phase 0: Fundament (Woche 1)
 Zeitraum: 2026-04-01 bis 2026-04-07
@@ -105,6 +105,7 @@ Deliverables:
   - Integrations-Tests fuer Sync-Pipeline
   - UI-Smoke-Tests fuer Settings/Menu-Bar
 - Release-Checkliste (Signierung/Notarisierung falls geplant).
+  - Dokumentiert in `RELEASE_CHECKLIST.md`.
 
 Abnahme:
 - Alle Muss-Anforderungen aus `INSTRUCTION.md` sind nachweisbar erfuellt.
