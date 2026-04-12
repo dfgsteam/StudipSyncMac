@@ -3,78 +3,78 @@
 Stand: 2026-04-04
 
 ## Scope
-- Geprueft: Sync-Pipeline (`SyncEngine`, `SyncScheduler`) und Status-UX (`MenuBarStatusController`, `MenuBarRootView`).
-- Bezug: Muss-Anforderungen aus `INSTRUCTION.md` (insbesondere inkrementeller Sync, Fehlerrobustheit, Menu-Bar-Status).
+- Geprueft: Phase-5-Aenderungen in `SyncScheduler`, `SyncEngine`, Cache-Invalidierung (`SettingsView`, `MetadataCache`, `SharedCourseParticipationCache`) sowie Testabdeckung.
+- Bezug: Muss-Anforderungen aus `INSTRUCTION.md` (insbesondere lokales Semester/Kurs-Caching, Fehlerrobustheit, Resume, Tests).
 
 ## Validierung
-- `xcrun swiftc -frontend -parse $(rg --files StudipSync StudipSyncTests -g '*.swift')`: erfolgreich.
-- `python3 Scripts/validate_api_coverage.py`: `Missing routes: 0`.
+- `xcrun swiftc -frontend -parse $(rg --files StudipSync StudipSyncTests StudipSyncUITests -g '*.swift')`: erfolgreich.
+- `python3 Scripts/validate_api_coverage.py`: `Missing routes: 0`, aber `Undocumented implemented routes: 12`.
 - `xcodebuild ... test`: in aktueller Umgebung nicht ausfuehrbar (nur CommandLineTools, kein volles Xcode).
 
 ## Findings (priorisiert)
 
-### 1) High: Entfernte Remote-Dateien werden lokal nicht geloescht oder markiert
+### 1) High: Persistenter Kurs-Metadaten-Cache fehlt weiterhin
 - Evidenz:
-  - [StudipSync/Sync/SyncEngine.swift:222](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:222)
-  - [StudipSync/Sync/SyncEngine.swift:229](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:229)
+  - [MetadataCache.swift:5](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Services/MetadataCache.swift:5)
+  - [MetadataCache.swift:39](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Services/MetadataCache.swift:39)
+  - [ContentView+StateAndPrefetch.swift:279](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/ContentView+StateAndPrefetch.swift:279)
+  - [ContentView+StateAndPrefetch.swift:308](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/ContentView+StateAndPrefetch.swift:308)
 - Problem:
-  - Der Sync entfernt nur Manifest-Eintraege, bereinigt aber keine bereits lokal liegenden Dateien fuer nicht mehr vorhandene Remote-IDs.
+  - Kurslisten werden nur im UI-State (`coursesBySemesterID`) gehalten und nicht auf Disk persistiert.
+  - `MetadataCache` speichert aktuell ausschließlich `semesters`.
 - Risiko:
-  - Drift zwischen Remote- und lokalem Stand, wachsender Datenmuell, Verletzung der Sync-Anforderung aus `INSTRUCTION.md` ("geloeschte Dateien lokal entfernen oder markieren").
+  - Bei App-Neustart/Offline stehen Kurse nicht lokal zur Verfuegung, obwohl Muss-Anforderung Semester- **und** Kurs-Metadaten-Caching fordert.
 - Empfehlung:
-  - Beim Manifest-Cleanup geloeschte/obsolet gewordene Dateien auf Disk entfernen oder in definierte Quarantaene verschieben.
-  - Optional konfigurierbar machen (hart loeschen vs. markieren).
+  - `MetadataCache.Snapshot` um persistente Kursmetadaten erweitern (z. B. `coursesBySemesterID`) und `loadCoursesForSelectedSemester()` auf stale-while-revalidate mit Disk-Fallback umstellen.
 
-### 2) Medium: Security-scoped Zugriff wird nicht hart validiert
+### 2) Medium: Fehlerklassifikation verliert Ursache bei Teilausfaellen pro Semester
 - Evidenz:
-  - [StudipSync/Sync/SyncEngine.swift:170](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:170)
-  - [StudipSync/Sync/SyncEngine.swift:177](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:177)
+  - [SyncEngine.swift:315](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:315)
+  - [SyncEngine.swift:334](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncEngine.swift:334)
+  - [SyncScheduler.swift:336](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncScheduler.swift:336)
 - Problem:
-  - `startAccessingSecurityScopedResource()` wird aufgerufen, aber ein `false`-Rueckgabewert stoppt den Lauf nicht.
+  - `SyncEngine` aggregiert Semesterfehler als `String` (`activeSemesterSyncFailed([String])`), danach klassifiziert `SyncScheduler` pauschal als `serverTemporary`.
+  - Permanente Ursachen (z. B. Auth/Config) koennen dadurch als retrybar behandelt werden.
 - Risiko:
-  - Nicht-deterministisches Verhalten bei Sandbox-/Bookmark-Problemen, spaete File-Fehler ohne klare Ursache.
+  - Unnoetige Retries, irrefuehrender Status fuer Nutzer, langsamere Fehlerdiagnose.
 - Empfehlung:
-  - Bei `didAccessScope == false` frueh mit `rootFolderNotAccessible` abbrechen (klarer Status/Error-Pfad).
+  - Strukturierte Fehleraggregation (typed payload statt `String`) und differenzierte Klassifikation im Scheduler.
 
-### 3) Medium: Tolerance-Strategie fuehrt zu systematischem Intervall-Drift
+### 3) Medium: "Cache leeren" invalidiert keine aktiven In-Memory-Listen
 - Evidenz:
-  - [StudipSync/Sync/SyncScheduler.swift:31](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncScheduler.swift:31)
-  - [StudipSync/Sync/SyncScheduler.swift:84](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Sync/SyncScheduler.swift:84)
+  - [SettingsView.swift:300](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/UI/SettingsView.swift:300)
+  - [ContentView+StateAndPrefetch.swift:308](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/ContentView+StateAndPrefetch.swift:308)
 - Problem:
-  - Jitter wird nur positiv addiert (`base + random(0...tolerance)`), dadurch ist der effektive Intervall immer groesser als konfiguriert.
+  - Der Settings-Action-Flow entfernt Disk-Caches, aber aktive UI-States (z. B. `coursesBySemesterID`, geladene Semesterliste) bleiben unveraendert.
 - Risiko:
-  - Zeitliche Drift bei langen Laufzeiten, unerwartete Abweichung vom eingestellten Sync-Intervall.
+  - Nutzer sieht nach "Cache leeren" weiterhin alte Daten bis zum manuellen Reload/Neustart.
 - Empfehlung:
-  - Entweder feste Baseline + systemseitige Tolerance (z. B. `NSBackgroundActivityScheduler`) oder symmetrischer Jitter um den Zielzeitpunkt.
+  - Globales Cache-Invalidation-Signal (z. B. via `NotificationCenter`/Store-Flag) und unmittelbares Leeren der In-Memory-Caches.
 
-### 4) Low: Doppelte "letzter Sync"-Information in der Menu-Bar bei Success
+### 4) Medium: UI-Smoke-Tests sind noch sehr schmal und fragil
 - Evidenz:
-  - [StudipSync/UI/MenuBarRootView.swift:12](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/UI/MenuBarRootView.swift:12)
-  - [StudipSync/UI/MenuBarRootView.swift:16](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/UI/MenuBarRootView.swift:16)
-  - [StudipSync/Core/SyncState.swift:29](/Users/julius.hunold/Projects/github/StudipSync/StudipSync/Core/SyncState.swift:29)
+  - [StudipSyncUITests.swift:33](/Users/julius.hunold/Projects/github/StudipSync/StudipSyncUITests/StudipSyncUITests.swift:33)
 - Problem:
-  - Bei Success wird "letzter erfolgreicher Sync" sowohl als feste Zeile als auch als Status-Detail gezeigt.
+  - Aktuelle UI-Smokes decken nur Launch + Settings-Shortcut ab; zentrale RC-Pfade (Menu-Bar-Statuswechsel, Cache-leeren-Feedback, Sync-Trigger) sind nicht abgesichert.
+  - `Cmd+,` als Navigationspfad ist auf macOS-UI-Tests erfahrungsgemaess fragil.
 - Risiko:
-  - UX-Rauschen, unnoetige Redundanz.
+  - Regressions in Settings/Menu-Bar bleiben unentdeckt.
 - Empfehlung:
-  - Erfolgsdetail unterdruecken oder nur fuer Error-Faelle als Detailzeile anzeigen.
+  - Smoke-Pfade robust ueber sichtbare UI-Elemente absichern und mindestens einen Statuswechsel (Running/Error/Success) kontrolliert pruefen.
 
-### 5) Medium: Testabdeckung fuer kritische Sync-Pfade ist noch lueckenhaft
+### 5) Low: API-Dokumentation driftet gegen implementierte Routen
 - Evidenz:
-  - Vorhandene Tests fokussieren aktuell primär auf Utility/Status, z. B. [StudipSyncTests/StudipSyncTests.swift:87](/Users/julius.hunold/Projects/github/StudipSync/StudipSyncTests/StudipSyncTests.swift:87)
+  - `python3 Scripts/validate_api_coverage.py` meldet 12 implementierte, aber undokumentierte Routen.
 - Problem:
-  - Keine gezielten Tests fuer:
-  - Datei-Loesch-/Markierlogik.
-  - Scheduler-Tolerance ohne Drift.
-  - Fehlerpfad bei nicht verfuegbarem Security-Scoped Zugriff.
+  - API-Abdeckung ist funktional vollstaendig, aber interne Doku/Abgleich ist nicht mehr synchron.
 - Risiko:
-  - Regressionsgefahr bei zentralen Sync-Funktionen.
+  - Hoehere Wartungskosten bei API-Aenderungen, Fehlinterpretation des echten Umfangs.
 - Empfehlung:
-  - Integration-nahe Tests mit temp-Verzeichnis + stubbed Repository/Settings fuer die obigen Faelle.
+  - Skript-Quelle bzw. Doku-Liste auf implementierten Stand aktualisieren.
 
 ## Empfohlene Reihenfolge
-1. Entfernte Dateien korrekt behandeln (High).
-2. Security-scoped Zugriff hart validieren (Medium).
-3. Scheduler-Tolerance ohne Drift umsetzen (Medium).
-4. Testabdeckung fuer Sync-Kernpfade ausbauen (Medium).
-5. Menu-Bar Redundanz bereinigen (Low).
+1. Persistenten Kurs-Cache einfuehren (High).
+2. Fehleraggregation/-klassifikation typisiert nachziehen (Medium).
+3. In-Memory-Invalidierung bei "Cache leeren" ergaenzen (Medium).
+4. UI-Smoke-Abdeckung fuer Settings/Menu-Bar robust machen (Medium).
+5. API-Doku/Route-Referenz synchronisieren (Low).

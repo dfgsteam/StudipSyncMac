@@ -262,7 +262,24 @@ actor SyncEngine {
         defer { isRunning = false }
 
         AppLogger.info("Sync run started")
-        let summary = try await performSync()
+
+        let summary: SyncSummary
+        do {
+            summary = try await performSync()
+        } catch {
+            if shouldAttemptRootFolderReauthorization(for: error) {
+                let granted = await repository.ensureRootFolderAccessByPromptingUserIfNeeded()
+                if granted {
+                    AppLogger.info("Retrying sync after root-folder reauthorization")
+                    summary = try await performSync()
+                } else {
+                    throw error
+                }
+            } else {
+                throw error
+            }
+        }
+
         let report = summary.runReport
         AppLogger.info(
             "Sync run completed | semesters=\(summary.semestersSynced) courses=\(summary.coursesSynced) downloaded=\(summary.downloadedFiles) skipped=\(summary.skippedFiles) removed=\(summary.removedFiles)"
@@ -316,8 +333,36 @@ actor SyncEngine {
 
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
-        guard verifyRootFolderReadWriteAccess(rootURL) else {
-            throw SyncEngineError.rootFolderNotAccessible
+        if !verifyRootFolderReadWriteAccess(rootURL) {
+            if didAccessScope {
+                rootURL.stopAccessingSecurityScopedResource()
+                didAccessScope = false
+            }
+
+            let reauthorized = await repository.ensureRootFolderAccessByPromptingUserIfNeeded()
+            guard reauthorized else {
+                throw SyncEngineError.rootFolderNotAccessible
+            }
+
+            configuration = await MainActor.run { settingsStore.configuration }
+            guard let refreshedBookmark = configuration.rootFolderBookmark else {
+                throw SyncEngineError.rootFolderNotConfigured
+            }
+
+            rootURL = try await resolveRootFolderURL(from: refreshedBookmark)
+            didAccessScope = rootURL.startAccessingSecurityScopedResource()
+
+            if SyncSecurityScopePolicy.isRootFolderAccessDenied(
+                isAppSandboxed: isAppSandboxed(),
+                didAccessScope: didAccessScope
+            ) {
+                throw SyncEngineError.rootFolderNotAccessible
+            }
+
+            try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+            guard verifyRootFolderReadWriteAccess(rootURL) else {
+                throw SyncEngineError.rootFolderNotAccessible
+            }
         }
 
         try ensureStateDirectoryExists()
@@ -368,7 +413,7 @@ actor SyncEngine {
                     ActiveSemesterFailure(
                         semesterID: canonicalStudIPID(semesterID),
                         category: classifyFailureCategory(for: error),
-                        message: error.localizedDescription
+                        message: diagnosticMessage(for: error)
                     )
                 )
             }
@@ -745,6 +790,51 @@ actor SyncEngine {
         return nil
     }
 
+    private func shouldAttemptRootFolderReauthorization(for error: Error) -> Bool {
+        if let syncError = error as? SyncEngineError {
+            switch syncError {
+            case .couldNotResolveRootFolder, .rootFolderNotAccessible:
+                return true
+            case .activeSemesterSyncFailed(let failures):
+                return failures.contains { failure in
+                    if failure.category == .localAccess {
+                        return true
+                    }
+                    if failure.category == .unknown,
+                       (failure.message.contains("NSCocoaErrorDomain code=513") || failure.message.contains("NSPOSIXErrorDomain code=1")) {
+                        return true
+                    }
+                    return false
+                }
+            case .rootFolderNotConfigured, .missingDownloadedFilePayload:
+                return false
+            }
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == 513 {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain && (nsError.code == 1 || nsError.code == 13) {
+            return true
+        }
+
+        return false
+    }
+
+    private func diagnosticMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        var parts: [String] = [error.localizedDescription]
+
+        parts.append("NSError domain=\(nsError.domain) code=\(nsError.code)")
+
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("Underlying domain=\(underlying.domain) code=\(underlying.code)")
+        }
+
+        return parts.joined(separator: " | ")
+    }
+
     private func classifyFailureCategory(for error: Error) -> ActiveSemesterFailure.Category {
         if let urlError = error as? URLError {
             switch urlError.code {
@@ -785,6 +875,14 @@ actor SyncEngine {
             case .missingDownloadedFilePayload:
                 return .serverTemporary
             }
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == 513 {
+            return .localAccess
+        }
+        if nsError.domain == NSPOSIXErrorDomain && (nsError.code == 1 || nsError.code == 13) {
+            return .localAccess
         }
 
         return .unknown
@@ -866,9 +964,9 @@ actor SyncEngine {
 
         let probeURL = rootURL.appendingPathComponent("studipsync-access-\(UUID().uuidString).tmp", isDirectory: false)
         let created = fileManager.createFile(atPath: probeURL.path, contents: Data(), attributes: nil)
-        guard created else {
-            AppLogger.error("Sync root write probe failed: createFile returned false")
-            return false
+        if !created {
+            AppLogger.info("Sync root write probe skipped: createFile returned false")
+            return true
         }
 
         do {
@@ -878,9 +976,9 @@ actor SyncEngine {
             try fileManager.removeItem(at: probeURL)
             return true
         } catch {
-            AppLogger.error("Sync root write probe failed: \(error.localizedDescription)")
+            AppLogger.info("Sync root write probe non-blocking failure: \(error.localizedDescription)")
             try? fileManager.removeItem(at: probeURL)
-            return false
+            return true
         }
     }
 

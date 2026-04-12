@@ -392,8 +392,8 @@ struct SettingsView: View {
 
             let probeURL = url.appendingPathComponent("studipsync-access-\(UUID().uuidString).tmp", isDirectory: false)
             let created = FileManager.default.createFile(atPath: probeURL.path, contents: Data(), attributes: nil)
-            guard created else {
-                return (false, "Sync-Ordner ist nur teilweise autorisiert (Schreibtest fehlgeschlagen). Bitte Ordner erneut auswaehlen.")
+            if !created {
+                return (true, "Ordnerzugriff aktiv (Schreibtest konnte nicht bestaetigt werden). Falls Sync scheitert: bitte einen Ordner eine Ebene hoeher auswaehlen.")
             }
 
             do {
@@ -401,12 +401,11 @@ struct SettingsView: View {
                 defer { try? handle.close() }
                 try handle.write(contentsOf: Data("probe".utf8))
                 try FileManager.default.removeItem(at: probeURL)
+                return (true, "Ordnerzugriff aktiv.")
             } catch {
                 try? FileManager.default.removeItem(at: probeURL)
-                return (false, "Sync-Ordner ist nur teilweise autorisiert (Schreibtest fehlgeschlagen). Bitte Ordner erneut auswaehlen.")
+                return (true, "Ordnerzugriff aktiv (Schreibtest konnte nicht bestaetigt werden). Falls Sync scheitert: bitte einen Ordner eine Ebene hoeher auswaehlen.")
             }
-
-            return (true, "Ordnerzugriff aktiv.")
         } catch {
             return (false, "Sync-Ordner konnte nicht gelesen werden: \(error.localizedDescription)")
         }
