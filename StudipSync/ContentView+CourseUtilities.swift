@@ -111,6 +111,101 @@ extension ContentView {
         fileFolderPathByCourseID[courseID] = []
     }
 
+    func isTechnicalCourseRootFolder(_ folder: FolderDTO, courseID: String) -> Bool {
+        canonicalStudIPID(folder.id) == canonicalStudIPID(courseID)
+    }
+
+    func resolvedCourseRootListing(
+        courseID: String,
+        folders: [FolderDTO],
+        files: [CourseFileRefDTO]
+    ) async throws -> (folders: [FolderDTO], files: [CourseFileRefDTO]) {
+        guard let rootFolder = technicalRootFolderToAutoExpand(
+            courseID: courseID,
+            folders: folders,
+            files: files
+        ) else {
+            return (folders, files)
+        }
+
+        async let loadedFolders = repository.fetchFolderFolders(folderID: rootFolder.id, offset: 0, limit: 1000)
+        async let loadedFiles = repository.fetchFolderFileRefs(folderID: rootFolder.id, offset: 0, limit: 1000)
+        let (childFolders, childFiles) = try await (loadedFolders, loadedFiles)
+
+        return (
+            folders: deduplicatedFolders(childFolders),
+            files: deduplicatedFiles(files + childFiles)
+        )
+    }
+
+    func technicalRootFolderToAutoExpand(
+        courseID: String,
+        folders: [FolderDTO],
+        files: [CourseFileRefDTO]
+    ) -> FolderDTO? {
+        guard files.isEmpty, folders.count == 1, let candidate = folders.first else {
+            return nil
+        }
+
+        if isTechnicalCourseRootFolder(candidate, courseID: courseID) {
+            return candidate
+        }
+
+        guard let normalizedName = normalizedFolderNameForRootDetection(candidate.name) else {
+            return nil
+        }
+
+        let knownRootNames: Set<String> = [
+            "main folder",
+            "mainfolder",
+            "hauptordner",
+            "root folder",
+            "rootfolder"
+        ]
+
+        return knownRootNames.contains(normalizedName) ? candidate : nil
+    }
+
+    private func normalizedFolderNameForRootDetection(_ rawName: String?) -> String? {
+        guard let name = nonEmpty(rawName)?.lowercased() else {
+            return nil
+        }
+
+        return name
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    private func deduplicatedFolders(_ folders: [FolderDTO]) -> [FolderDTO] {
+        var seenIDs: Set<String> = []
+        var uniqueFolders: [FolderDTO] = []
+        uniqueFolders.reserveCapacity(folders.count)
+
+        for folder in folders {
+            if seenIDs.insert(folder.id).inserted {
+                uniqueFolders.append(folder)
+            }
+        }
+
+        return uniqueFolders
+    }
+
+    private func deduplicatedFiles(_ files: [CourseFileRefDTO]) -> [CourseFileRefDTO] {
+        var seenIDs: Set<String> = []
+        var uniqueFiles: [CourseFileRefDTO] = []
+        uniqueFiles.reserveCapacity(files.count)
+
+        for file in files {
+            if seenIDs.insert(file.id).inserted {
+                uniqueFiles.append(file)
+            }
+        }
+
+        return uniqueFiles
+    }
+
     func fileMetadataLine(_ fileRef: CourseFileRefDTO) -> String {
         var components: [String] = []
 

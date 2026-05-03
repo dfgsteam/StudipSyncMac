@@ -616,14 +616,23 @@ extension ContentView {
         do {
             async let loadedFolders = repository.fetchFolders(scope: .course(courseID), offset: 0, limit: 1000)
             async let loadedFiles = repository.fetchFileRefs(scope: .course(courseID), offset: 0, limit: 1000)
-            let (folders, files) = try await (loadedFolders, loadedFiles)
+            let (fetchedFolders, fetchedFiles) = try await (loadedFolders, loadedFiles)
+            let resolvedListing = try await resolvedCourseRootListing(
+                courseID: courseID,
+                folders: fetchedFolders,
+                files: fetchedFiles
+            )
 
-            let sortedFolders = folders.sorted { lhs, rhs in
+            let visibleFolders = resolvedListing.folders.filter { folder in
+                !isTechnicalCourseRootFolder(folder, courseID: courseID)
+            }
+
+            let sortedFolders = visibleFolders.sorted { lhs, rhs in
                 let lhsName = nonEmpty(lhs.name) ?? lhs.id
                 let rhsName = nonEmpty(rhs.name) ?? rhs.id
                 return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
             }
-            let sortedFiles = files.sorted { lhs, rhs in
+            let sortedFiles = resolvedListing.files.sorted { lhs, rhs in
                 let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
                 let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
                 if lhsDate != rhsDate {

@@ -136,13 +136,33 @@ extension ContentView {
                 return try await repository.fetchFileRefs(scope: .course(requestCourseID), offset: 0, limit: 1000)
             }()
 
-            let (folders, files) = try await (loadedFolders, loadedFiles)
-            let sortedFolders = folders.sorted { lhs, rhs in
+            let (fetchedFolders, fetchedFiles) = try await (loadedFolders, loadedFiles)
+            let effectiveListing: (folders: [FolderDTO], files: [CourseFileRefDTO])
+            if requestFolderID == nil {
+                effectiveListing = try await resolvedCourseRootListing(
+                    courseID: requestCourseID,
+                    folders: fetchedFolders,
+                    files: fetchedFiles
+                )
+            } else {
+                effectiveListing = (fetchedFolders, fetchedFiles)
+            }
+
+            let visibleFolders: [FolderDTO]
+            if requestFolderID == nil {
+                visibleFolders = effectiveListing.folders.filter { folder in
+                    !isTechnicalCourseRootFolder(folder, courseID: requestCourseID)
+                }
+            } else {
+                visibleFolders = effectiveListing.folders
+            }
+
+            let sortedFolders = visibleFolders.sorted { lhs, rhs in
                 let lhsName = nonEmpty(lhs.name) ?? lhs.id
                 let rhsName = nonEmpty(rhs.name) ?? rhs.id
                 return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
             }
-            let sortedFiles = files.sorted { lhs, rhs in
+            let sortedFiles = effectiveListing.files.sorted { lhs, rhs in
                 let lhsDate = parseAPIDate(lhs.chdate) ?? parseAPIDate(lhs.mkdate) ?? .distantPast
                 let rhsDate = parseAPIDate(rhs.chdate) ?? parseAPIDate(rhs.mkdate) ?? .distantPast
                 if lhsDate != rhsDate {

@@ -412,6 +412,197 @@ struct StudipSyncTests {
 
     @Test
     @MainActor
+    func syncEnginePreservesFolderHierarchyAndDisambiguatesFolderNames() async throws {
+        let suiteName = "StudipSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncRoot-\(UUID().uuidString)", isDirectory: true)
+        let stateDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncState-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: rootDirectory)
+            try? FileManager.default.removeItem(at: stateDirectory)
+        }
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+
+        let bookmark = try rootDirectory.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.updateBaseURL(URL(string: "https://studip.example.edu")!)
+        settingsStore.updateRootFolderBookmark(bookmark)
+        settingsStore.updateActiveSemesterIDs(["semester-1"])
+        settingsStore.updateMaxConcurrentFileDownloads(2)
+
+        let repository = SyncEngineRepositoryStub()
+        await repository.configure(
+            semesters: [SemesterDTO(id: "semester-1", title: "SoSe 2026")],
+            coursesBySemesterID: ["semester-1": [makeCourseDTO(id: "course-1", title: "Ordner Test Kurs", semesterID: "semester-1")]],
+            filesByCourseID: [:],
+            filePayloadsByID: [
+                "root-file": Data("root".utf8),
+                "child-a-file": Data("child-a".utf8),
+                "child-b-file": Data("child-b".utf8)
+            ],
+            eTagByFileID: [
+                "root-file": "\"etag-root\"",
+                "child-a-file": "\"etag-a\"",
+                "child-b-file": "\"etag-b\""
+            ]
+        )
+        await repository.configureFolderHierarchy(
+            supportsFolderAPI: true,
+            rootFileRefsByCourseID: [
+                "course-1": [
+                    makeCourseFileRefDTO(id: "root-file", name: "Root.txt", downloadURLPath: "/v1/file-refs/root-file/content")
+                ]
+            ],
+            rootFoldersByCourseID: [
+                "course-1": [
+                    makeFolderDTO(id: "folder-a", name: "Material"),
+                    makeFolderDTO(id: "folder-b", name: "Material")
+                ]
+            ],
+            folderFileRefsByFolderID: [
+                "folder-a": [
+                    makeCourseFileRefDTO(id: "child-a-file", name: "Skript.pdf", downloadURLPath: "/v1/file-refs/child-a-file/content")
+                ],
+                "folder-b": [
+                    makeCourseFileRefDTO(id: "child-b-file", name: "Skript.pdf", downloadURLPath: "/v1/file-refs/child-b-file/content")
+                ]
+            ],
+            childFoldersByFolderID: [:]
+        )
+
+        let engine = SyncEngine(
+            repository: repository,
+            settingsStore: settingsStore,
+            fileManager: .default,
+            stateDirectory: stateDirectory
+        )
+
+        let run = try await engine.runSync()
+        #expect(run.didRun)
+        #expect(run.downloadedFiles == 3)
+
+        let base = rootDirectory
+            .appendingPathComponent("SoSe 2026 [semester]", isDirectory: true)
+            .appendingPathComponent("Ordner Test Kurs [course-1]", isDirectory: true)
+
+        let rootFileURL = base.appendingPathComponent("Root.txt")
+        let folderAFileURL = base
+            .appendingPathComponent("Material [folder-a]", isDirectory: true)
+            .appendingPathComponent("Skript.pdf")
+        let folderBFileURL = base
+            .appendingPathComponent("Material [folder-b]", isDirectory: true)
+            .appendingPathComponent("Skript.pdf")
+
+        #expect(FileManager.default.fileExists(atPath: rootFileURL.path))
+        #expect(FileManager.default.fileExists(atPath: folderAFileURL.path))
+        #expect(FileManager.default.fileExists(atPath: folderBFileURL.path))
+    }
+
+    @Test
+    @MainActor
+    func syncEngineFlattensTechnicalMainFolderAtCourseRoot() async throws {
+        let suiteName = "StudipSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncRoot-\(UUID().uuidString)", isDirectory: true)
+        let stateDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncState-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: rootDirectory)
+            try? FileManager.default.removeItem(at: stateDirectory)
+        }
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+
+        let bookmark = try rootDirectory.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.updateBaseURL(URL(string: "https://studip.example.edu")!)
+        settingsStore.updateRootFolderBookmark(bookmark)
+        settingsStore.updateActiveSemesterIDs(["semester-1"])
+        settingsStore.updateMaxConcurrentFileDownloads(2)
+
+        let repository = SyncEngineRepositoryStub()
+        await repository.configure(
+            semesters: [SemesterDTO(id: "semester-1", title: "SoSe 2026")],
+            coursesBySemesterID: ["semester-1": [makeCourseDTO(id: "course-1", title: "Sync Root Test", semesterID: "semester-1")]],
+            filesByCourseID: [:],
+            filePayloadsByID: [
+                "main-inner-file": Data("main-root".utf8),
+                "week-file": Data("week".utf8)
+            ],
+            eTagByFileID: [
+                "main-inner-file": "\"etag-main-inner\"",
+                "week-file": "\"etag-week\""
+            ]
+        )
+        await repository.configureFolderHierarchy(
+            supportsFolderAPI: true,
+            rootFileRefsByCourseID: [
+                "course-1": []
+            ],
+            rootFoldersByCourseID: [
+                "course-1": [
+                    makeFolderDTO(id: "course-1", name: "Main Folder")
+                ]
+            ],
+            folderFileRefsByFolderID: [
+                "course-1": [
+                    makeCourseFileRefDTO(id: "main-inner-file", name: "Hinweis.txt", downloadURLPath: "/v1/file-refs/main-inner-file/content")
+                ],
+                "week-folder": [
+                    makeCourseFileRefDTO(id: "week-file", name: "Skript.pdf", downloadURLPath: "/v1/file-refs/week-file/content")
+                ]
+            ],
+            childFoldersByFolderID: [
+                "course-1": [
+                    makeFolderDTO(id: "week-folder", name: "Woche 1")
+                ]
+            ]
+        )
+
+        let engine = SyncEngine(
+            repository: repository,
+            settingsStore: settingsStore,
+            fileManager: .default,
+            stateDirectory: stateDirectory
+        )
+
+        let run = try await engine.runSync()
+        #expect(run.didRun)
+        #expect(run.downloadedFiles == 2)
+
+        let base = rootDirectory
+            .appendingPathComponent("SoSe 2026 [semester]", isDirectory: true)
+            .appendingPathComponent("Sync Root Test [course-1]", isDirectory: true)
+
+        let rootLevelFileURL = base.appendingPathComponent("Hinweis.txt")
+        let nestedFileURL = base
+            .appendingPathComponent("Woche 1", isDirectory: true)
+            .appendingPathComponent("Skript.pdf")
+        let technicalRootFolderURL = base.appendingPathComponent("Main Folder", isDirectory: true)
+
+        #expect(FileManager.default.fileExists(atPath: rootLevelFileURL.path))
+        #expect(FileManager.default.fileExists(atPath: nestedFileURL.path))
+        #expect(!FileManager.default.fileExists(atPath: technicalRootFolderURL.path))
+    }
+
+    @Test
+    @MainActor
     func menuBarStatusControllerKeepsLastSuccessfulSyncDateAcrossStateChanges() {
         let controller = MenuBarStatusController()
         #expect(controller.lastSuccessfulSyncAt == nil)
@@ -609,6 +800,12 @@ actor SyncEngineRepositoryStub: SyncEngineRepository {
     private var filePayloadsByID: [String: Data] = [:]
     private var eTagByFileID: [String: String] = [:]
     private var lastModifiedByFileID: [String: String] = [:]
+    private var supportsFolderAPI = false
+    private var rootFileRefsByCourseID: [String: [CourseFileRefDTO]] = [:]
+    private var rootFoldersByCourseID: [String: [FolderDTO]] = [:]
+    private var folderFileRefsByFolderID: [String: [CourseFileRefDTO]] = [:]
+    private var childFoldersByFolderID: [String: [FolderDTO]] = [:]
+    private let unsupportedFolderAPIError = NSError(domain: "SyncEngineRepositoryStub", code: 1)
 
     func configure(
         semesters: [SemesterDTO],
@@ -629,6 +826,20 @@ actor SyncEngineRepositoryStub: SyncEngineRepository {
         self.filesByCourseID = filesByCourseID
     }
 
+    func configureFolderHierarchy(
+        supportsFolderAPI: Bool,
+        rootFileRefsByCourseID: [String: [CourseFileRefDTO]],
+        rootFoldersByCourseID: [String: [FolderDTO]],
+        folderFileRefsByFolderID: [String: [CourseFileRefDTO]],
+        childFoldersByFolderID: [String: [FolderDTO]]
+    ) {
+        self.supportsFolderAPI = supportsFolderAPI
+        self.rootFileRefsByCourseID = rootFileRefsByCourseID
+        self.rootFoldersByCourseID = rootFoldersByCourseID
+        self.folderFileRefsByFolderID = folderFileRefsByFolderID
+        self.childFoldersByFolderID = childFoldersByFolderID
+    }
+
     func loadSemestersStaleWhileRevalidate(
         onRefresh: (@MainActor ([SemesterDTO]) -> Void)?
     ) async throws -> StudIPSemesterLoadResult {
@@ -641,6 +852,26 @@ actor SyncEngineRepositoryStub: SyncEngineRepository {
 
     func fetchCourseFiles(courseID: String, offset: Int, limit: Int) async throws -> [StudIPCourseFileRef] {
         filesByCourseID[canonicalStudIPID(courseID)] ?? filesByCourseID[courseID] ?? []
+    }
+
+    func fetchFileRefs(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [CourseFileRefDTO] {
+        guard supportsFolderAPI else { throw unsupportedFolderAPIError }
+        return rootFileRefsByCourseID[canonicalStudIPID(scope.rawID)] ?? rootFileRefsByCourseID[scope.rawID] ?? []
+    }
+
+    func fetchFolders(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [FolderDTO] {
+        guard supportsFolderAPI else { throw unsupportedFolderAPIError }
+        return rootFoldersByCourseID[canonicalStudIPID(scope.rawID)] ?? rootFoldersByCourseID[scope.rawID] ?? []
+    }
+
+    func fetchFolderFileRefs(folderID: String, offset: Int, limit: Int) async throws -> [CourseFileRefDTO] {
+        guard supportsFolderAPI else { throw unsupportedFolderAPIError }
+        return folderFileRefsByFolderID[canonicalStudIPID(folderID)] ?? folderFileRefsByFolderID[folderID] ?? []
+    }
+
+    func fetchFolderFolders(folderID: String, offset: Int, limit: Int) async throws -> [FolderDTO] {
+        guard supportsFolderAPI else { throw unsupportedFolderAPIError }
+        return childFoldersByFolderID[canonicalStudIPID(folderID)] ?? childFoldersByFolderID[folderID] ?? []
     }
 
     func downloadFileContent(
@@ -673,4 +904,31 @@ actor SyncEngineRepositoryStub: SyncEngineRepository {
             ]
         )
     }
+}
+
+private func makeFolderDTO(id: String, name: String?) -> FolderDTO {
+    let payload = """
+    {"id":"\(id)","attributes":{"name":"\(name ?? "")"}}
+    """
+    let data = Data(payload.utf8)
+    return try! JSONDecoder().decode(FolderDTO.self, from: data)
+}
+
+private func makeCourseFileRefDTO(id: String, name: String, downloadURLPath: String) -> CourseFileRefDTO {
+    let payload = """
+    {
+      "id":"\(id)",
+      "attributes":{
+        "name":"\(name)",
+        "is-readable":true,
+        "is-downloadable":true,
+        "filesize":4,
+        "mkdate":"1700000000",
+        "chdate":"1700000000"
+      },
+      "meta":{"download-url":"\(downloadURLPath)"}
+    }
+    """
+    let data = Data(payload.utf8)
+    return try! JSONDecoder().decode(CourseFileRefDTO.self, from: data)
 }

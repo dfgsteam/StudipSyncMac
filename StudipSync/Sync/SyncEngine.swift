@@ -81,6 +81,38 @@ enum SyncPathPlanner {
         return namesByID
     }
 
+    static func folderNameMap(for folders: [FolderDTO]) -> [String: String] {
+        var baseNamesByID: [String: String] = [:]
+        baseNamesByID.reserveCapacity(folders.count)
+
+        for folder in folders {
+            let fallbackName = "ordner-\(shortID(folder.id))"
+            let candidate = sanitizedPathComponent((folder.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+            let base = candidate.isEmpty ? fallbackName : candidate
+            baseNamesByID[folder.id] = base
+        }
+
+        var groupedIDsByLowercasedName: [String: [String]] = [:]
+        for (folderID, baseName) in baseNamesByID {
+            groupedIDsByLowercasedName[baseName.lowercased(), default: []].append(folderID)
+        }
+
+        var namesByID: [String: String] = [:]
+        namesByID.reserveCapacity(folders.count)
+
+        for folder in folders {
+            let baseName = baseNamesByID[folder.id] ?? "ordner-\(shortID(folder.id))"
+            let collidingIDs = groupedIDsByLowercasedName[baseName.lowercased()] ?? []
+            if collidingIDs.count <= 1 {
+                namesByID[folder.id] = baseName
+                continue
+            }
+            namesByID[folder.id] = "\(baseName) [\(shortID(folder.id))]"
+        }
+
+        return namesByID
+    }
+
     static func fileFingerprint(for file: StudIPCourseFileRef) -> String {
         let changedAt = Int64((file.changedAt ?? file.createdAt ?? .distantPast).timeIntervalSince1970)
         let size = Int64(file.fileSize ?? -1)
@@ -89,6 +121,22 @@ enum SyncPathPlanner {
 
     static func shortID(_ rawID: String) -> String {
         String(canonicalStudIPID(rawID).prefix(8))
+    }
+
+    static func parseAPIDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let seconds = TimeInterval(trimmed) {
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        if let date = apiISO8601WithFractionalSeconds.date(from: trimmed) ?? apiISO8601.date(from: trimmed) {
+            return date
+        }
+
+        return nil
     }
 
     private static func appendingSuffix(_ suffix: String, toFileName fileName: String) -> String {
@@ -100,6 +148,18 @@ enum SyncPathPlanner {
         }
         return "\(stem)-\(suffix).\(ext)"
     }
+
+    private static let apiISO8601WithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let apiISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }
 
 struct SyncRunReport: Sendable {
@@ -119,6 +179,10 @@ protocol SyncEngineRepository: Sendable {
     ) async throws -> StudIPSemesterLoadResult
     func fetchCourses(for semesterID: String, offset: Int?, limit: Int?) async throws -> [CourseDTO]
     func fetchCourseFiles(courseID: String, offset: Int, limit: Int) async throws -> [StudIPCourseFileRef]
+    func fetchFileRefs(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [CourseFileRefDTO]
+    func fetchFolders(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [FolderDTO]
+    func fetchFolderFileRefs(folderID: String, offset: Int, limit: Int) async throws -> [CourseFileRefDTO]
+    func fetchFolderFolders(folderID: String, offset: Int, limit: Int) async throws -> [FolderDTO]
     func downloadFileContent(
         fileRefID: String,
         fallbackDownloadPath: String?,
@@ -130,6 +194,26 @@ protocol SyncEngineRepository: Sendable {
 
 extension SyncEngineRepository {
     func ensureRootFolderAccessByPromptingUserIfNeeded() async -> Bool { true }
+
+    func fetchFileRefs(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [CourseFileRefDTO] {
+        throw SyncFolderDiscoveryError.unsupported
+    }
+
+    func fetchFolders(scope: StudIPContainerScope, offset: Int, limit: Int) async throws -> [FolderDTO] {
+        throw SyncFolderDiscoveryError.unsupported
+    }
+
+    func fetchFolderFileRefs(folderID: String, offset: Int, limit: Int) async throws -> [CourseFileRefDTO] {
+        throw SyncFolderDiscoveryError.unsupported
+    }
+
+    func fetchFolderFolders(folderID: String, offset: Int, limit: Int) async throws -> [FolderDTO] {
+        throw SyncFolderDiscoveryError.unsupported
+    }
+}
+
+private enum SyncFolderDiscoveryError: Error {
+    case unsupported
 }
 
 actor SyncEngine {
@@ -214,6 +298,12 @@ actor SyncEngine {
         let relativePath: String
         let fallbackDownloadPath: String?
         let existingEntry: SyncManifest.Entry?
+    }
+
+    private struct CourseSyncFileCandidate: Sendable {
+        let file: StudIPCourseFileRef
+        let directoryComponents: [String]
+        let fallbackDownloadPath: String?
     }
 
     private struct FileSyncResult: Sendable {
@@ -398,6 +488,7 @@ actor SyncEngine {
 
                 let semesterSummary = try await syncSemester(
                     semester,
+                    baseURL: configuration.baseURL,
                     rootURL: rootURL,
                     manifest: &manifest,
                     seenFileIDs: &seenFileIDs,
@@ -442,6 +533,7 @@ actor SyncEngine {
 
     private func syncSemester(
         _ semester: SemesterDTO,
+        baseURL: URL,
         rootURL: URL,
         manifest: inout SyncManifest,
         seenFileIDs: inout Set<String>,
@@ -464,34 +556,14 @@ actor SyncEngine {
             let courseURL = semesterURL.appendingPathComponent(courseFolder, isDirectory: true)
             try fileManager.createDirectory(at: courseURL, withIntermediateDirectories: true)
 
-            let files = try await repository.fetchCourseFiles(courseID: course.id, offset: 0, limit: 1000)
-            let fileNamesByID = SyncPathPlanner.fileNameMap(for: files)
-
-            var plans: [FileSyncPlan] = []
-            plans.reserveCapacity(files.count)
-
-            for file in files {
-                if Task.isCancelled {
-                    break
-                }
-
-                guard file.isReadable != false, file.isDownloadable != false else {
-                    continue
-                }
-
-                let targetFileName = fileNamesByID[file.id] ?? "datei-\(SyncPathPlanner.shortID(file.id))"
-                let targetURL = courseURL.appendingPathComponent(targetFileName, isDirectory: false)
-                let plan = FileSyncPlan(
-                    fileID: file.id,
-                    fingerprint: SyncPathPlanner.fileFingerprint(for: file),
-                    canonicalSemesterID: canonicalStudIPID(semester.id),
-                    targetURL: targetURL,
-                    relativePath: relativePath(from: rootURL, to: targetURL),
-                    fallbackDownloadPath: fallbackDownloadPath(from: file.downloadURL),
-                    existingEntry: manifest.entries[file.id]
-                )
-                plans.append(plan)
-            }
+            let plans = try await makeFileSyncPlans(
+                courseID: course.id,
+                semesterID: semester.id,
+                baseURL: baseURL,
+                courseURL: courseURL,
+                rootURL: rootURL,
+                manifest: manifest
+            )
 
             if plans.isEmpty {
                 continue
@@ -537,6 +609,257 @@ actor SyncEngine {
         }
 
         return summary
+    }
+
+    private func makeFileSyncPlans(
+        courseID: String,
+        semesterID: String,
+        baseURL: URL,
+        courseURL: URL,
+        rootURL: URL,
+        manifest: SyncManifest
+    ) async throws -> [FileSyncPlan] {
+        if let folderAwarePlans = try await makeFolderAwareFileSyncPlans(
+            courseID: courseID,
+            semesterID: semesterID,
+            baseURL: baseURL,
+            courseURL: courseURL,
+            rootURL: rootURL,
+            manifest: manifest
+        ) {
+            return folderAwarePlans
+        }
+
+        let files = try await repository.fetchCourseFiles(courseID: courseID, offset: 0, limit: 1000)
+        let candidates = files.map { file in
+            CourseSyncFileCandidate(
+                file: file,
+                directoryComponents: [],
+                fallbackDownloadPath: fallbackDownloadPath(from: file.downloadURL)
+            )
+        }
+        return buildPlans(from: candidates, semesterID: semesterID, courseURL: courseURL, rootURL: rootURL, manifest: manifest)
+    }
+
+    private func makeFolderAwareFileSyncPlans(
+        courseID: String,
+        semesterID: String,
+        baseURL: URL,
+        courseURL: URL,
+        rootURL: URL,
+        manifest: SyncManifest
+    ) async throws -> [FileSyncPlan]? {
+        do {
+            let candidates = try await discoverCourseFilesPreservingFolders(courseID: courseID, baseURL: baseURL)
+            return buildPlans(from: candidates, semesterID: semesterID, courseURL: courseURL, rootURL: rootURL, manifest: manifest)
+        } catch SyncFolderDiscoveryError.unsupported {
+            return nil
+        } catch {
+            AppLogger.error("Folder-aware file sync failed for course \(courseID). Falling back to flat file listing: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func buildPlans(
+        from candidates: [CourseSyncFileCandidate],
+        semesterID: String,
+        courseURL: URL,
+        rootURL: URL,
+        manifest: SyncManifest
+    ) -> [FileSyncPlan] {
+        var groupedCandidatesByDirectory: [String: [CourseSyncFileCandidate]] = [:]
+        groupedCandidatesByDirectory.reserveCapacity(candidates.count)
+
+        for candidate in candidates where candidate.file.isReadable != false && candidate.file.isDownloadable != false {
+            let directoryKey = candidate.directoryComponents.joined(separator: "/")
+            groupedCandidatesByDirectory[directoryKey, default: []].append(candidate)
+        }
+
+        var plans: [FileSyncPlan] = []
+        plans.reserveCapacity(candidates.count)
+
+        for (_, groupedCandidates) in groupedCandidatesByDirectory {
+            let files = groupedCandidates.map(\.file)
+            let fileNamesByID = SyncPathPlanner.fileNameMap(for: files)
+
+            for candidate in groupedCandidates {
+                let targetFileName = fileNamesByID[candidate.file.id] ?? "datei-\(SyncPathPlanner.shortID(candidate.file.id))"
+                var directoryURL = courseURL
+                for component in candidate.directoryComponents {
+                    directoryURL = directoryURL.appendingPathComponent(component, isDirectory: true)
+                }
+                let targetURL = directoryURL.appendingPathComponent(targetFileName, isDirectory: false)
+                plans.append(
+                    FileSyncPlan(
+                        fileID: candidate.file.id,
+                        fingerprint: SyncPathPlanner.fileFingerprint(for: candidate.file),
+                        canonicalSemesterID: canonicalStudIPID(semesterID),
+                        targetURL: targetURL,
+                        relativePath: relativePath(from: rootURL, to: targetURL),
+                        fallbackDownloadPath: candidate.fallbackDownloadPath,
+                        existingEntry: manifest.entries[candidate.file.id]
+                    )
+                )
+            }
+        }
+
+        return plans
+    }
+
+    private func discoverCourseFilesPreservingFolders(courseID: String, baseURL: URL) async throws -> [CourseSyncFileCandidate] {
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        let rootFileRefs = try await repository.fetchFileRefs(scope: .course(normalizedCourseID), offset: 0, limit: 1000)
+        let rootFolders = try await repository.fetchFolders(scope: .course(normalizedCourseID), offset: 0, limit: 1000)
+
+        var candidates: [CourseSyncFileCandidate] = rootFileRefs.map { fileRef in
+            CourseSyncFileCandidate(
+                file: mapFileRefDTOToCourseFile(fileRef, baseURL: baseURL),
+                directoryComponents: [],
+                fallbackDownloadPath: fallbackDownloadPath(fromRawPath: fileRef.downloadURLPath, baseURL: baseURL)
+            )
+        }
+
+        let effectiveRootFolders: [FolderDTO]
+        if let technicalRootFolder = technicalRootFolderToAutoExpand(
+            courseID: normalizedCourseID,
+            rootFolders: rootFolders,
+            rootFileRefs: rootFileRefs
+        ) {
+            async let rootChildFileRefs = repository.fetchFolderFileRefs(
+                folderID: technicalRootFolder.id,
+                offset: 0,
+                limit: 1000
+            )
+            async let rootChildFolders = repository.fetchFolderFolders(
+                folderID: technicalRootFolder.id,
+                offset: 0,
+                limit: 1000
+            )
+            let (childFileRefs, childFolders) = try await (rootChildFileRefs, rootChildFolders)
+
+            candidates.append(contentsOf: childFileRefs.map { fileRef in
+                CourseSyncFileCandidate(
+                    file: mapFileRefDTOToCourseFile(fileRef, baseURL: baseURL),
+                    directoryComponents: [],
+                    fallbackDownloadPath: fallbackDownloadPath(fromRawPath: fileRef.downloadURLPath, baseURL: baseURL)
+                )
+            })
+            effectiveRootFolders = childFolders
+        } else {
+            effectiveRootFolders = rootFolders
+        }
+
+        let rootFolderNames = SyncPathPlanner.folderNameMap(for: effectiveRootFolders)
+        var queue: [(folderID: String, pathComponents: [String])] = effectiveRootFolders.map { folder in
+            (
+                folderID: canonicalStudIPID(folder.id),
+                pathComponents: [rootFolderNames[folder.id] ?? "ordner-\(SyncPathPlanner.shortID(folder.id))"]
+            )
+        }
+        var queueIndex = 0
+        var visitedFolderIDs: Set<String> = []
+
+        while queueIndex < queue.count {
+            if Task.isCancelled {
+                break
+            }
+
+            let current = queue[queueIndex]
+            queueIndex += 1
+
+            if !visitedFolderIDs.insert(current.folderID).inserted {
+                continue
+            }
+
+            let folderFileRefs = try await repository.fetchFolderFileRefs(folderID: current.folderID, offset: 0, limit: 1000)
+            candidates.append(contentsOf: folderFileRefs.map { fileRef in
+                CourseSyncFileCandidate(
+                    file: mapFileRefDTOToCourseFile(fileRef, baseURL: baseURL),
+                    directoryComponents: current.pathComponents,
+                    fallbackDownloadPath: fallbackDownloadPath(fromRawPath: fileRef.downloadURLPath, baseURL: baseURL)
+                )
+            })
+
+            let childFolders = try await repository.fetchFolderFolders(folderID: current.folderID, offset: 0, limit: 1000)
+            let childFolderNames = SyncPathPlanner.folderNameMap(for: childFolders)
+            queue.append(contentsOf: childFolders.map { folder in
+                let folderName = childFolderNames[folder.id] ?? "ordner-\(SyncPathPlanner.shortID(folder.id))"
+                return (
+                    folderID: canonicalStudIPID(folder.id),
+                    pathComponents: current.pathComponents + [folderName]
+                )
+            })
+        }
+
+        return candidates
+    }
+
+    private func technicalRootFolderToAutoExpand(
+        courseID: String,
+        rootFolders: [FolderDTO],
+        rootFileRefs: [CourseFileRefDTO]
+    ) -> FolderDTO? {
+        guard rootFileRefs.isEmpty, rootFolders.count == 1, let candidate = rootFolders.first else {
+            return nil
+        }
+
+        let normalizedCourseID = canonicalStudIPID(courseID)
+        if canonicalStudIPID(candidate.id) == normalizedCourseID {
+            return candidate
+        }
+
+        guard let normalizedName = normalizedFolderNameForRootDetection(candidate.name) else {
+            return nil
+        }
+
+        let knownRootNames: Set<String> = [
+            "main folder",
+            "mainfolder",
+            "hauptordner",
+            "root folder",
+            "rootfolder"
+        ]
+        return knownRootNames.contains(normalizedName) ? candidate : nil
+    }
+
+    private func normalizedFolderNameForRootDetection(_ rawName: String?) -> String? {
+        guard let rawName else { return nil }
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        return trimmed
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    private func mapFileRefDTOToCourseFile(_ fileRef: CourseFileRefDTO, baseURL: URL) -> StudIPCourseFileRef {
+        let resolvedDownloadURL: URL?
+        if let rawPath = fileRef.downloadURLPath?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPath.isEmpty {
+            if let absolute = URL(string: rawPath), absolute.scheme != nil {
+                resolvedDownloadURL = absolute
+            } else {
+                resolvedDownloadURL = URL(string: rawPath, relativeTo: baseURL)?.absoluteURL
+            }
+        } else {
+            resolvedDownloadURL = nil
+        }
+
+        return StudIPCourseFileRef(
+            id: fileRef.id,
+            name: fileRef.name ?? "Datei \(fileRef.id)",
+            description: fileRef.description,
+            ownerName: fileRef.ownerName,
+            mimeType: fileRef.mimeType,
+            downloads: fileRef.downloads,
+            fileSize: fileRef.fileSize,
+            createdAt: SyncPathPlanner.parseAPIDate(fileRef.mkdate),
+            changedAt: SyncPathPlanner.parseAPIDate(fileRef.chdate),
+            isReadable: fileRef.isReadable,
+            isDownloadable: fileRef.isDownloadable,
+            downloadURL: resolvedDownloadURL
+        )
     }
 
     private func syncFile(_ plan: FileSyncPlan, rootURL: URL) async throws -> FileSyncResult {
@@ -775,6 +1098,23 @@ actor SyncEngine {
             path.append("?\(query)")
         }
         return path.isEmpty ? nil : path
+    }
+
+    private func fallbackDownloadPath(fromRawPath rawPath: String?, baseURL: URL) -> String? {
+        guard let rawPath else { return nil }
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.hasPrefix("/") {
+            return trimmed
+        }
+        if let absolute = URL(string: trimmed), absolute.scheme != nil {
+            return fallbackDownloadPath(from: absolute)
+        }
+        if let relative = URL(string: trimmed, relativeTo: baseURL)?.absoluteURL {
+            return fallbackDownloadPath(from: relative)
+        }
+        return trimmed
     }
 
     private func normalizedHeaderValue(_ headers: [AnyHashable: Any], key: String) -> String? {
