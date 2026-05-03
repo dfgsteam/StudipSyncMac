@@ -120,30 +120,39 @@ extension ContentView {
         folders: [FolderDTO],
         files: [CourseFileRefDTO]
     ) async throws -> (folders: [FolderDTO], files: [CourseFileRefDTO]) {
-        guard let rootFolder = technicalRootFolderToAutoExpand(
-            courseID: courseID,
-            folders: folders,
-            files: files
-        ) else {
-            return (folders, files)
+        let rootListing: (folders: [FolderDTO], files: [CourseFileRefDTO])
+        if let rootFolder = technicalRootFolderToAutoExpand(courseID: courseID, folders: folders) {
+            async let loadedFolders = repository.fetchFolderFolders(folderID: rootFolder.id, offset: 0, limit: 1000)
+            async let loadedFiles = repository.fetchFolderFileRefs(folderID: rootFolder.id, offset: 0, limit: 1000)
+            let (childFolders, childFiles) = try await (loadedFolders, loadedFiles)
+
+            rootListing = (
+                folders: deduplicatedFolders(childFolders),
+                files: deduplicatedFiles(files + childFiles)
+            )
+        } else {
+            rootListing = (
+                folders: deduplicatedFolders(folders),
+                files: deduplicatedFiles(files)
+            )
         }
 
-        async let loadedFolders = repository.fetchFolderFolders(folderID: rootFolder.id, offset: 0, limit: 1000)
-        async let loadedFiles = repository.fetchFolderFileRefs(folderID: rootFolder.id, offset: 0, limit: 1000)
-        let (childFolders, childFiles) = try await (loadedFolders, loadedFiles)
+        let sanitizedRootFiles = await filterLeakedNestedFilesFromRootListing(
+            files: rootListing.files,
+            rootFolders: rootListing.folders
+        )
 
         return (
-            folders: deduplicatedFolders(childFolders),
-            files: deduplicatedFiles(files + childFiles)
+            folders: rootListing.folders,
+            files: sanitizedRootFiles
         )
     }
 
     func technicalRootFolderToAutoExpand(
         courseID: String,
-        folders: [FolderDTO],
-        files: [CourseFileRefDTO]
+        folders: [FolderDTO]
     ) -> FolderDTO? {
-        guard files.isEmpty, folders.count == 1, let candidate = folders.first else {
+        guard folders.count == 1, let candidate = folders.first else {
             return nil
         }
 
@@ -164,6 +173,119 @@ extension ContentView {
         ]
 
         return knownRootNames.contains(normalizedName) ? candidate : nil
+    }
+
+    private func filterLeakedNestedFilesFromRootListing(
+        files: [CourseFileRefDTO],
+        rootFolders: [FolderDTO]
+    ) async -> [CourseFileRefDTO] {
+        let deduplicatedRootFiles = deduplicatedFiles(files)
+        guard !deduplicatedRootFiles.isEmpty, !rootFolders.isEmpty else {
+            return deduplicatedRootFiles
+        }
+
+        do {
+            let nestedFileMarkers = try await collectNestedFileMarkers(folderIDs: rootFolders.map(\.id))
+            guard !nestedFileMarkers.isEmpty else {
+                return deduplicatedRootFiles
+            }
+
+            return deduplicatedRootFiles.filter { rootFile in
+                !nestedFileMarkers.contains(rootFile)
+            }
+        } catch {
+            AppLogger.error(
+                "Could not refine root file listing. Showing fallback root data: \(error.localizedDescription)"
+            )
+            return deduplicatedRootFiles
+        }
+    }
+
+    private func collectNestedFileMarkers(folderIDs: [String]) async throws -> NestedFileMarkers {
+        var queue = folderIDs.map(canonicalStudIPID)
+        var queueIndex = 0
+        var visitedFolderIDs: Set<String> = []
+        var nestedFileMarkers = NestedFileMarkers()
+
+        while queueIndex < queue.count {
+            let folderID = queue[queueIndex]
+            queueIndex += 1
+
+            if !visitedFolderIDs.insert(folderID).inserted {
+                continue
+            }
+
+            async let loadedFiles = repository.fetchFolderFileRefs(folderID: folderID, offset: 0, limit: 1000)
+            async let loadedFolders = repository.fetchFolderFolders(folderID: folderID, offset: 0, limit: 1000)
+            let (filesInFolder, childFolders) = try await (loadedFiles, loadedFolders)
+
+            nestedFileMarkers.formUnion(filesInFolder)
+            queue.append(contentsOf: childFolders.map { canonicalStudIPID($0.id) })
+        }
+
+        return nestedFileMarkers
+    }
+
+    private struct NestedFileMarkers {
+        var ids: Set<String> = []
+        var downloadPaths: Set<String> = []
+        var signatures: Set<String> = []
+
+        var isEmpty: Bool {
+            ids.isEmpty && downloadPaths.isEmpty && signatures.isEmpty
+        }
+
+        mutating func formUnion(_ files: [CourseFileRefDTO]) {
+            for file in files {
+                ids.insert(canonicalStudIPID(file.id))
+                if let normalizedPath = normalizedDownloadPath(file.downloadURLPath) {
+                    downloadPaths.insert(normalizedPath)
+                }
+                signatures.insert(fileSignature(file))
+            }
+        }
+
+        func contains(_ file: CourseFileRefDTO) -> Bool {
+            if let normalizedPath = normalizedDownloadPath(file.downloadURLPath),
+               downloadPaths.contains(normalizedPath) {
+                return true
+            }
+
+            if ids.contains(canonicalStudIPID(file.id)) {
+                return true
+            }
+
+            return signatures.contains(fileSignature(file))
+        }
+    }
+
+    private static func normalizedDownloadPath(_ rawPath: String?) -> String? {
+        guard let rawPath else { return nil }
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let components = URLComponents(string: trimmed) {
+            let path = components.path.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty {
+                return path.lowercased()
+            }
+        }
+
+        if let queryStart = trimmed.firstIndex(of: "?") {
+            return String(trimmed[..<queryStart]).lowercased()
+        }
+
+        return trimmed.lowercased()
+    }
+
+    private static func fileSignature(_ file: CourseFileRefDTO) -> String {
+        let normalizedName = (file.name ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedSize = file.fileSize.map(String.init) ?? "-"
+        let normalizedChanged = file.chdate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
+        let normalizedCreated = file.mkdate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
+        return "\(normalizedName)|\(normalizedSize)|\(normalizedChanged)|\(normalizedCreated)"
     }
 
     private func normalizedFolderNameForRootDetection(_ rawName: String?) -> String? {

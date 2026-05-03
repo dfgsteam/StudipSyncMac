@@ -722,8 +722,7 @@ actor SyncEngine {
         let effectiveRootFolders: [FolderDTO]
         if let technicalRootFolder = technicalRootFolderToAutoExpand(
             courseID: normalizedCourseID,
-            rootFolders: rootFolders,
-            rootFileRefs: rootFileRefs
+            rootFolders: rootFolders
         ) {
             async let rootChildFileRefs = repository.fetchFolderFileRefs(
                 folderID: technicalRootFolder.id,
@@ -791,15 +790,14 @@ actor SyncEngine {
             })
         }
 
-        return candidates
+        return deduplicatedCandidatesPreferringNestedPaths(candidates)
     }
 
     private func technicalRootFolderToAutoExpand(
         courseID: String,
-        rootFolders: [FolderDTO],
-        rootFileRefs: [CourseFileRefDTO]
+        rootFolders: [FolderDTO]
     ) -> FolderDTO? {
-        guard rootFileRefs.isEmpty, rootFolders.count == 1, let candidate = rootFolders.first else {
+        guard rootFolders.count == 1, let candidate = rootFolders.first else {
             return nil
         }
 
@@ -820,6 +818,54 @@ actor SyncEngine {
             "rootfolder"
         ]
         return knownRootNames.contains(normalizedName) ? candidate : nil
+    }
+
+    private func deduplicatedCandidatesPreferringNestedPaths(
+        _ candidates: [CourseSyncFileCandidate]
+    ) -> [CourseSyncFileCandidate] {
+        var bestByFileID: [String: CourseSyncFileCandidate] = [:]
+        var orderedFileIDs: [String] = []
+        orderedFileIDs.reserveCapacity(candidates.count)
+
+        for candidate in candidates {
+            let canonicalFileID = canonicalStudIPID(candidate.file.id)
+
+            if let existing = bestByFileID[canonicalFileID] {
+                if shouldPrefer(candidate, over: existing) {
+                    bestByFileID[canonicalFileID] = candidate
+                }
+            } else {
+                bestByFileID[canonicalFileID] = candidate
+                orderedFileIDs.append(canonicalFileID)
+            }
+        }
+
+        return orderedFileIDs.compactMap { bestByFileID[$0] }
+    }
+
+    private func shouldPrefer(
+        _ lhs: CourseSyncFileCandidate,
+        over rhs: CourseSyncFileCandidate
+    ) -> Bool {
+        let lhsDepth = lhs.directoryComponents.count
+        let rhsDepth = rhs.directoryComponents.count
+        if lhsDepth != rhsDepth {
+            return lhsDepth > rhsDepth
+        }
+
+        let lhsPath = lhs.directoryComponents.joined(separator: "/").lowercased()
+        let rhsPath = rhs.directoryComponents.joined(separator: "/").lowercased()
+        if lhsPath != rhsPath {
+            return lhsPath < rhsPath
+        }
+
+        let lhsHasFallbackPath = lhs.fallbackDownloadPath != nil
+        let rhsHasFallbackPath = rhs.fallbackDownloadPath != nil
+        if lhsHasFallbackPath != rhsHasFallbackPath {
+            return lhsHasFallbackPath
+        }
+
+        return false
     }
 
     private func normalizedFolderNameForRootDetection(_ rawName: String?) -> String? {

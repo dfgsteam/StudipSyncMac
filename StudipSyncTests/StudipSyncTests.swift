@@ -509,6 +509,92 @@ struct StudipSyncTests {
 
     @Test
     @MainActor
+    func syncEnginePrefersNestedFolderPathWhenRootFileRefsAreRecursive() async throws {
+        let suiteName = "StudipSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncRoot-\(UUID().uuidString)", isDirectory: true)
+        let stateDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudipSyncSyncState-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: rootDirectory)
+            try? FileManager.default.removeItem(at: stateDirectory)
+        }
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+
+        let bookmark = try rootDirectory.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.updateBaseURL(URL(string: "https://studip.example.edu")!)
+        settingsStore.updateRootFolderBookmark(bookmark)
+        settingsStore.updateActiveSemesterIDs(["semester-1"])
+        settingsStore.updateMaxConcurrentFileDownloads(2)
+
+        let repository = SyncEngineRepositoryStub()
+        await repository.configure(
+            semesters: [SemesterDTO(id: "semester-1", title: "SoSe 2026")],
+            coursesBySemesterID: ["semester-1": [makeCourseDTO(id: "course-1", title: "Leak Test Kurs", semesterID: "semester-1")]],
+            filesByCourseID: [:],
+            filePayloadsByID: [
+                "nested-file": Data("nested".utf8)
+            ],
+            eTagByFileID: [
+                "nested-file": "\"etag-nested\""
+            ]
+        )
+        await repository.configureFolderHierarchy(
+            supportsFolderAPI: true,
+            // Simulate recursive root payload: child file appears at course root and inside its folder.
+            rootFileRefsByCourseID: [
+                "course-1": [
+                    makeCourseFileRefDTO(id: "nested-file", name: "Skript.pdf", downloadURLPath: "/v1/file-refs/nested-file/content")
+                ]
+            ],
+            rootFoldersByCourseID: [
+                "course-1": [
+                    makeFolderDTO(id: "folder-a", name: "Unterlagen")
+                ]
+            ],
+            folderFileRefsByFolderID: [
+                "folder-a": [
+                    makeCourseFileRefDTO(id: "nested-file", name: "Skript.pdf", downloadURLPath: "/v1/file-refs/nested-file/content")
+                ]
+            ],
+            childFoldersByFolderID: [:]
+        )
+
+        let engine = SyncEngine(
+            repository: repository,
+            settingsStore: settingsStore,
+            fileManager: .default,
+            stateDirectory: stateDirectory
+        )
+
+        let run = try await engine.runSync()
+        #expect(run.didRun)
+        #expect(run.downloadedFiles == 1)
+
+        let base = rootDirectory
+            .appendingPathComponent("SoSe 2026 [semester]", isDirectory: true)
+            .appendingPathComponent("Leak Test Kurs [course-1]", isDirectory: true)
+
+        let rootLevelFileURL = base.appendingPathComponent("Skript.pdf")
+        let nestedFileURL = base
+            .appendingPathComponent("Unterlagen", isDirectory: true)
+            .appendingPathComponent("Skript.pdf")
+
+        #expect(!FileManager.default.fileExists(atPath: rootLevelFileURL.path))
+        #expect(FileManager.default.fileExists(atPath: nestedFileURL.path))
+    }
+
+    @Test
+    @MainActor
     func syncEngineFlattensTechnicalMainFolderAtCourseRoot() async throws {
         let suiteName = "StudipSyncTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
