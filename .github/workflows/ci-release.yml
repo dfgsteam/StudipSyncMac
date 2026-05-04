@@ -1,0 +1,91 @@
+name: CI and Release
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      create_release_artifact:
+        description: "Build unsigned Release .app artifact"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  test-and-validate:
+    name: Test and Validate
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print Xcode version
+        run: xcodebuild -version
+
+      - name: Validate API coverage documentation
+        run: python3 Scripts/validate_api_coverage.py
+
+      - name: Swift parse check
+        run: |
+          xcrun swiftc -frontend -parse \
+            $(find StudipSync StudipSyncTests StudipSyncUITests -name '*.swift' -print)
+
+      - name: Run unit and UI tests
+        run: |
+          xcodebuild \
+            -project StudipSync.xcodeproj \
+            -scheme StudipSync \
+            -destination "platform=macOS" \
+            test
+
+  release-artifact:
+    name: Build Release Artifact
+    runs-on: macos-latest
+    timeout-minutes: 45
+    needs: test-and-validate
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release_artifact == 'true')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print Xcode version
+        run: xcodebuild -version
+
+      - name: Build unsigned Release app
+        run: |
+          xcodebuild \
+            -project StudipSync.xcodeproj \
+            -scheme StudipSync \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package .app bundle
+        run: |
+          APP_PATH=$(find build/Build/Products/Release -maxdepth 1 -name "StudipSync.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "StudipSync.app not found in Release products."
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "StudipSync-macOS-Release.zip"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudipSync-macOS-Release
+          path: StudipSync-macOS-Release.zip
+          if-no-files-found: error
