@@ -434,11 +434,13 @@ final class SyncScheduler {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.isSystemSleeping = true
-            self.cancelLoop(clearConfiguration: false)
-            self.statusController?.setIdle()
-            AppLogger.info("System will sleep. Sync scheduler paused.")
+            guard let strongSelf = self else { return }
+            Task { @MainActor [strongSelf] in
+                strongSelf.isSystemSleeping = true
+                strongSelf.cancelLoop(clearConfiguration: false)
+                strongSelf.statusController?.setIdle()
+                AppLogger.info("System will sleep. Sync scheduler paused.")
+            }
         }
 
         didWakeObserver = center.addObserver(
@@ -446,13 +448,15 @@ final class SyncScheduler {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.isSystemSleeping = false
-            guard let interval = self.configuredIntervalMinutes else { return }
+            guard let strongSelf = self else { return }
+            Task { @MainActor [strongSelf] in
+                strongSelf.isSystemSleeping = false
+                guard let interval = strongSelf.configuredIntervalMinutes else { return }
 
-            let tolerance = self.scheduleToleranceSeconds(for: interval)
-            self.launchLoop(intervalMinutes: interval, toleranceSeconds: tolerance, runImmediately: true)
-            AppLogger.info("System did wake. Sync scheduler resumed.")
+                let tolerance = strongSelf.scheduleToleranceSeconds(for: interval)
+                strongSelf.launchLoop(intervalMinutes: interval, toleranceSeconds: tolerance, runImmediately: true)
+                AppLogger.info("System did wake. Sync scheduler resumed.")
+            }
         }
     }
 }

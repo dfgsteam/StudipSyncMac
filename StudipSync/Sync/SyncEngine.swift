@@ -1138,7 +1138,7 @@ actor SyncEngine {
 
     private func fallbackDownloadPath(from downloadURL: URL?) -> String? {
         guard let downloadURL else { return nil }
-        var components = URLComponents(url: downloadURL, resolvingAgainstBaseURL: false)
+        let components = URLComponents(url: downloadURL, resolvingAgainstBaseURL: false)
         var path = components?.percentEncodedPath ?? downloadURL.path
         if let query = components?.percentEncodedQuery, !query.isEmpty {
             path.append("?\(query)")
